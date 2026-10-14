@@ -7,7 +7,7 @@
 
 ## Phase 2: table
 - [ ] `arduino.py`: open serial, send `M` at 10 Hz, parse `T` and `E`
-- [ ] `radio.py`: UDP socket, send/receive JSON, heartbeat 4×/s
+- [ ] `radio.py`: wrap `comms/boatlink` (Eric's package); register callbacks for `cmd`, `wps`, link lost/back
 - [ ] Receive `cmd`, apply the mixing formula, send to Arduino
 - [ ] Ignore `cmd` with an older `seq`
 - [ ] Build and send `tlm` once a second

@@ -2,7 +2,7 @@
 
 The Python on the shore Pi. Always on. Keeps the link to the boat, saves everything, builds the map, and serves the dashboard.
 
-Branch: `ground-station`. Language: Python 3.11+, FastAPI, SQLite.
+Owner: **Guru Jayaprakash** (`gurujaya`). Branch: `ground-station`. Language: Python 3.11+, FastAPI, SQLite.
 
 ## What it owns
 
@@ -22,7 +22,7 @@ Message formats: [`../docs/MESSAGES.md`](../docs/MESSAGES.md).
 ground-station/
   main.py            starts the UDP listener, the web server, the heartbeat
   config.py          ports, boat address, grid size, DB path
-  link.py            UDP to the boat; heartbeat 4×/s; "boat link lost" after 3 s
+  link.py            thin wrapper around comms/boatlink (Eric's package); "boat link lost" comes from it
   db.py              SQLite schema and inserts; one row per message
   api.py             FastAPI: /ws live feed, /api/history, /api/export.csv, /api/sweep
   control.py         who holds control; turns dashboard input into cmd at 10 Hz

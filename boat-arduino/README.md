@@ -2,7 +2,7 @@
 
 The firmware on the boat's Arduino. It does, it doesn't think: runs the motors and conveyor, reads the sensors, and cuts the motors if the Pi goes quiet.
 
-Branch: `boat-arduino`. Language: C++ (Arduino IDE or PlatformIO).
+Owner: **Guru Jayaprakash** (`gurujaya`), with John (Electrical) for pins and drivers. Branch: `boat-arduino`. Language: C++ (Arduino IDE or PlatformIO).
 
 ## What it owns
 

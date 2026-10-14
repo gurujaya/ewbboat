@@ -9,7 +9,7 @@ Tick a box in the same commit that finishes the work. Week 1 is the week of Oct 
 Gate: parts are ordered or found.
 
 - [ ] Team agrees on `docs/ARCHITECTURE.md`
-- [ ] Everyone has a name on a job (see `README.md` table)
+- [x] Everyone has a name on a job (see `docs/TEAM.md`)
 - [ ] `docs/MESSAGES.md` reviewed by the Pi, station, and dashboard owners
 - [ ] Decide Arduino vs ESP32
 - [ ] Decide which Wi-Fi bridge radios
@@ -37,7 +37,8 @@ Gate: drive it from the dashboard while it sits on a table.
 - [ ] Dashboard: video panel, readings strip, battery, signal, mode
 - [ ] Dashboard: gamepad → `cmd` at 10 Hz, Take control lock
 - [ ] Dashboard: map with the boat marker (any map tiles; offline tiles later)
-- [ ] Radio: both bridges configured, boat and station on the same network
+- [ ] Comms: `boatlink` package done and tested on two laptops
+- [ ] Comms: both bridges configured, boat and station on the same network
 - [ ] Test: gamepad moves motors on the table through the whole chain
 
 ## Phase 3: safety rules, then water (weeks 5–7)
@@ -54,7 +55,9 @@ Gate: it comes back on its own when we cut the signal.
 - [ ] Station: `evt` feed stored and shown
 - [ ] Dashboard: trail drawn live, Come home button, event feed, LINK LOST state
 - [ ] Dashboard: export run as CSV
-- [ ] Radio: range test over water, write the number into `ARCHITECTURE.md`
+- [ ] Comms: range test over water, write the number into `ARCHITECTURE.md`
+- [ ] Testing: all four sensors calibrated, numbers in `testing/calibration.md`
+- [ ] Testing: a log file for every test run
 - [ ] Test: unplug the Pi, motors stop within 2 s
 - [ ] Test: unplug the station radio, boat follows the trail back
 - [ ] Test: fake a low battery, warning shows, boat heads home
@@ -77,4 +80,5 @@ Gate: it sweeps a rectangle on its own.
 
 - [ ] Engineering notebook entry every time something works for the first time
 - [ ] Diagrams and the message spec kept current for the final report
-- [ ] Showcase demo plan: map on a screen, boat in the water
+- [ ] Showcase demo plan (`testing/demo.md`): map on a screen, boat in the water
+- [ ] `testing/parts.md` kept current for the BOM

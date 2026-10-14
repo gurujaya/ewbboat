@@ -15,15 +15,18 @@ boat-arduino/    C++ (Arduino). Motors, conveyor, sensors, GPS, compass, battery
 boat-pi/         Python 3. Radio link, camera, trail points, coming home, autopilot, SD logging.
 ground-station/  Python 3. Link to boat, SQLite, FastAPI web server, map building.
 dashboard/       Plain HTML + JS (no framework unless the team agrees). Video, map, readings, gamepad.
-radio-testing/   Radio setup notes, range-test scripts and logs.
-docs/            ARCHITECTURE, MESSAGES, TASKS, TESTING.
+comms/           boatlink/ (shared Python package: UDP, message encode/decode, heartbeat, signal) + radios, antenna, range tests.
+testing/         Parts list, sensor calibration, test logs, exported data and charts, showcase demo. Mostly markdown.
+docs/            ARCHITECTURE, MESSAGES, TEAM, TASKS, TESTING.
 ```
 
 Each job folder has a `README.md` and a `TASKS.md`. When you finish a task, tick it in `TASKS.md` in the same commit.
 
 ## Rules
 
-- **Branches.** One per job, same name as the folder. Never commit to `main`; changes reach `main` by pull request. See `CONTRIBUTING.md`.
+- **Branches.** One per job, same name as the folder; owners are in `docs/TEAM.md`. Never commit to `main`; changes reach `main` by pull request. See `CONTRIBUTING.md`.
+- **Radio code lives in `comms/boatlink`.** `boat-pi/radio.py` and `ground-station/link.py` are thin wrappers around it. Don't open sockets or hand-build JSON messages anywhere else.
+- **Two of the owners (testing) are not programmers.** Anything you write in `testing/` is plain language with steps, not code, unless they ask for a script. Keep scripts there tiny, commented, and runnable with one command.
 - **Messages are shared.** Any field that crosses the radio or the USB cable is defined in `docs/MESSAGES.md`. Change the doc first, then the code on both sides. Don't add undocumented fields.
 - **Safety first.** The Arduino must stop the motors if it hears nothing from the Pi for 2 seconds. The Pi must stop and run the lost-signal rules if it hears no heartbeat from the station for 3 seconds. Never remove or weaken these to make a test pass.
 - **Units.** Meters, seconds, degrees (0–360, clockwise from north), volts, dBm. Latitude/longitude as decimal degrees. Say the unit in variable names when it isn't obvious (`dist_m`, `heading_deg`).

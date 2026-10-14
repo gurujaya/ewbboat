@@ -21,14 +21,17 @@ Full write-up: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ## Folders = jobs
 
-| Folder | What lives here | Language | Branch |
-| --- | --- | --- | --- |
-| `boat-arduino/` | Motors, conveyor, sensors, GPS, compass, battery, the safety stop | C++ (Arduino) | `boat-arduino` |
-| `boat-pi/` | Radio link, camera stream, trail points, coming home, autopilot, SD logging | Python | `boat-pi` |
-| `ground-station/` | Link to the boat, database, web server, map building | Python | `ground-station` |
-| `dashboard/` | The web page: video, map, readings, gamepad driving | HTML + JS | `dashboard` |
-| `radio-testing/` | Radio setup, antenna, range tests, test logs | notes + scripts | `radio-testing` |
-| `docs/` | Architecture, message formats, the master task list | markdown | `main` |
+| Folder | What lives here | Language | Branch | Owner |
+| --- | --- | --- | --- | --- |
+| `boat-arduino/` | Motors, conveyor, sensors, GPS, compass, battery, the safety stop | C++ (Arduino) | `boat-arduino` | Guru |
+| `boat-pi/` | Camera, trail points, modes, coming home, autopilot, SD logging | Python | `boat-pi` | Zachary |
+| `ground-station/` | Database, web server, sweep planner, map building | Python | `ground-station` | Guru |
+| `dashboard/` | The web page: video, map, readings, gamepad driving | HTML + JS | `dashboard` | Sebastian |
+| `comms/` | Boat ↔ station link: the `boatlink` library, radios, antenna, range tests | Python + notes | `comms` | Eric |
+| `testing/` | Parts and BOM, sensor calibration, test logs, charts, showcase demo | markdown + sheets | `testing` | Nicholas, Mir |
+| `docs/` | Architecture, message formats, team, tasks, testing | markdown | `main` | everyone |
+
+Who's who and what each person does: [docs/TEAM.md](docs/TEAM.md)
 
 Every job folder has a `README.md` (what it is and how it fits) and a `TASKS.md` (the checklist for that job). Start there.
 
@@ -37,7 +40,7 @@ Every job folder has a `README.md` (what it is and how it fits) and a `TASKS.md`
 ```bash
 git clone https://github.com/gurujaya/ewbboat.git
 cd ewbboat
-git checkout boat-pi        # or whichever job is yours
+git checkout boat-pi        # your branch, from the table above
 cat boat-pi/README.md
 cat boat-pi/TASKS.md
 ```
@@ -55,6 +58,7 @@ Each level has to work before the next one starts. If we run out of time at leve
 
 ## Docs
 
+- [docs/TEAM.md](docs/TEAM.md) — who owns which branch and what they do
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the whole thing works, from basic to advanced
 - [docs/MESSAGES.md](docs/MESSAGES.md) — the four message types, field by field. Read this before writing any code that sends or receives anything.
 - [docs/TASKS.md](docs/TASKS.md) — the master checklist across all jobs, by phase

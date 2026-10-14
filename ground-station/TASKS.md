@@ -6,7 +6,7 @@
 - [ ] Decide station power with the team (outlet vs battery pack)
 
 ## Phase 2: table
-- [ ] `link.py`: UDP receive, heartbeat 4×/s, link-lost after 3 s
+- [ ] `link.py`: wrap `comms/boatlink`; save every incoming message, surface link lost/back
 - [ ] `db.py`: schema for tlm, trail, evt, ack, runs, sweeps; insert on every message
 - [ ] `api.py`: FastAPI app serving `../dashboard/` and a `/ws` that pushes every message live
 - [ ] `control.py`: take-control lock, dashboard input → `cmd` at 10 Hz with `seq`

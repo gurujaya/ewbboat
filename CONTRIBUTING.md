@@ -6,13 +6,16 @@ Short version: work on your job's branch, open a pull request into `main` when s
 
 There is one long-lived branch per job, and they all start from `main`:
 
-| Branch | Job |
-| --- | --- |
-| `boat-arduino` | Arduino firmware |
-| `boat-pi` | Raspberry Pi software on the boat |
-| `ground-station` | The station on shore |
-| `dashboard` | The web page |
-| `radio-testing` | Radios, antenna, range tests |
+| Branch | Job | Owner |
+| --- | --- | --- |
+| `boat-arduino` | Arduino firmware | Guru |
+| `boat-pi` | Raspberry Pi software on the boat | Zachary |
+| `ground-station` | The station on shore | Guru |
+| `dashboard` | The web page | Sebastian |
+| `comms` | Boat ↔ station link, radios, range tests | Eric |
+| `testing` | Parts, calibration, test logs, charts, demo | Nicholas, Mir |
+
+Full descriptions in [docs/TEAM.md](docs/TEAM.md).
 
 Work directly on your job's branch. If two people share a job, make a short-lived branch off it named `job/your-name-what-it-is`, for example `boat-pi/guru-trail-points`, and merge it back into the job branch when it works.
 
@@ -57,7 +60,11 @@ Anything that goes over the radio or the USB cable is defined in [docs/MESSAGES.
 
 - It runs. If it's Python, `python -m py_compile yourfile.py` at minimum.
 - No secrets, no Wi-Fi passwords, no API keys. Those go in a `.env` or a `*.local.json`, which are ignored.
-- No giant files. Logs, videos, and datasets go in the shared OneDrive, not here. If a test log is small and useful, put it in `radio-testing/logs/`.
+- No giant files. Videos go in the shared OneDrive, not here. Test logs (markdown) go in `testing/logs/` or `comms/logs/`; small CSVs in `testing/analysis/` are fine.
+
+## No terminal? Use the website
+
+Open the repo on github.com, switch the branch dropdown (top left) to your branch, click a file, click the pencil, edit, "Commit changes." That's a real commit. Good for markdown, logs, and small fixes.
 
 ## Write it down
 

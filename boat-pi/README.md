@@ -2,7 +2,7 @@
 
 The Python on the boat's Raspberry Pi. This is the brain: radio link to shore, camera, trail points, the coming-home rules, and the autopilot.
 
-Branch: `boat-pi`. Language: Python 3.11+.
+Owner: **Zachary Kamba** (`zachkam1`), pairing with Guru on the Arduino serial link. Branch: `boat-pi`. Language: Python 3.11+.
 
 ## What it owns
 
@@ -23,7 +23,7 @@ Everything it sends or receives is in [`../docs/MESSAGES.md`](../docs/MESSAGES.m
 boat-pi/
   main.py             starts everything, the 10 Hz main loop
   config.py           ports, addresses, thresholds (3 s, 10 s, 2 m, Kp, -75 dBm...)
-  radio.py            UDP send/receive, heartbeat timer, signal strength read
+  radio.py            thin wrapper around comms/boatlink (Eric's package); no socket code here
   arduino.py          serial: send M lines, parse T and E lines
   telemetry.py        build tlm from the latest Arduino data + radio + mode
   trail.py            save points, find last good-signal point, walk backwards

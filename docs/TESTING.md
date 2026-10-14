@@ -2,7 +2,7 @@
 
 Three places, in order: table → pool → open water. Nothing goes on open water until it passed on the table and in the pool. Every water test has a rope on the boat or a kayak nearby; a stopped boat drifts.
 
-Write the result of every test (pass/fail, date, who, what you saw) in the engineering notebook and, for radio tests, in `radio-testing/logs/`.
+Nicholas and Mir own running and logging these (`testing/`). Every test gets a file in `testing/logs/` the same day (template there); range tests also go in `comms/logs/`.
 
 ## Table tests (no water)
 

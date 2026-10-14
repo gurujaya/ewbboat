@@ -2,7 +2,7 @@
 
 The web page the driver and everyone else looks at. Served by the ground station; opens on any laptop or phone. Plain HTML, CSS, and JavaScript, no build step, so anyone can open the file and edit it.
 
-Branch: `dashboard`.
+Owner: **Sebastian Norberte** (`SebastianNorberte`). Branch: `dashboard`.
 
 ## What it shows
 
