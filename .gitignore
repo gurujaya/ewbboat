@@ -1,0 +1,30 @@
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.sqlite
+*.db
+logs/
+*.log
+
+# arduino / platformio
+.pio/
+*.bin
+*.elf
+*.hex
+
+# node
+node_modules/
+dist/
+
+# editors / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# secrets and local config
+.env
+*.local.json
+config.local.*
