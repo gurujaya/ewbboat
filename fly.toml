@@ -1,0 +1,16 @@
+# Fly.io config for the public sim demo. `fly launch` reads this, `fly deploy` ships it.
+app = "ewbboat"
+primary_region = "iad"
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"     # machine sleeps when nobody is connected, wakes on the next visit
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

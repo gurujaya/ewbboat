@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Boat viewer</title>
+<style>
+  :root { --bg:#0b1b33; --panel:#14294a; --ink:#fff; --muted:#a9bcd0; --teal:#2bc4d6; --orange:#f08a24; --green:#4fbf8a; --red:#e05a5a; --yellow:#f2c94c; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--ink); font:14px/1.4 Calibri, "Segoe UI", system-ui, sans-serif; overflow:hidden; }
+  #c { position:absolute; inset:0; display:block; }
+  #hud { position:absolute; left:16px; top:16px; width:300px; display:flex; flex-direction:column; gap:10px; pointer-events:none; }
+  .panel { background:rgba(20,41,74,.92); border:1px solid #2e4a6e; border-radius:10px; padding:12px 14px; pointer-events:auto; }
+  .panel h1 { margin:0 0 6px; font-size:13px; color:var(--muted); font-weight:600; letter-spacing:.02em; }
+  .big { font-size:26px; font-weight:700; }
+  .row { display:flex; justify-content:space-between; gap:8px; margin:3px 0; }
+  .row b { color:var(--teal); }
+  .mode-DRIVEN { color:var(--teal); } .mode-AUTO { color:var(--yellow); } .mode-COMING_HOME { color:var(--orange); }
+  .btns { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  button { font:inherit; font-weight:700; padding:9px 10px; border-radius:8px; border:1px solid var(--teal); background:transparent; color:var(--teal); cursor:pointer; }
+  button.primary { background:var(--orange); border-color:var(--orange); color:var(--bg); }
+  button.danger { border-color:var(--red); color:var(--red); }
+  button.on { background:var(--teal); color:var(--bg); }
+  #feed { position:absolute; right:16px; top:16px; width:320px; max-height:45vh; overflow:auto; font-size:12px; }
+  #feed div { padding:3px 0; border-bottom:1px solid #1f3658; color:var(--muted); }
+  #feed div b { color:var(--ink); }
+  #link { position:absolute; left:50%; top:16px; transform:translateX(-50%); padding:8px 16px; border-radius:999px; font-weight:700; background:var(--red); display:none; }
+  #help { position:absolute; left:16px; bottom:16px; color:var(--muted); font-size:12px; }
+  kbd { background:#1f3658; padding:1px 5px; border-radius:4px; font-family:inherit; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="link">LINK LOST</div>
+<div id="hud">
+  <div class="panel">
+    <h1>Boat</h1>
+    <div class="big" id="mode">—</div>
+    <div class="row"><span>battery</span><b id="batt">—</b></div>
+    <div class="row"><span>signal</span><b id="sig">—</b></div>
+    <div class="row"><span>heading</span><b id="hdg">—</b></div>
+    <div class="row"><span>from station</span><b id="dist">—</b></div>
+    <div class="row"><span>trail points</span><b id="trail">—</b></div>
+    <div class="row"><span>coverage</span><b id="cov">—</b></div>
+  </div>
+  <div class="panel">
+    <h1>Water</h1>
+    <div class="row"><span>temp</span><b id="temp">—</b></div>
+    <div class="row"><span>pH</span><b id="ph">—</b></div>
+    <div class="row"><span>turbidity</span><b id="turb">—</b></div>
+    <div class="row"><span>conductivity</span><b id="cond">—</b></div>
+  </div>
+  <div class="panel btns">
+    <button id="take" class="primary">TAKE CONTROL</button>
+    <button id="sweep">START SWEEP</button>
+    <button id="home" class="danger">COME HOME</button>
+    <button id="trash">MARK TRASH</button>
+    <button id="layer">LAYER: covered</button>
+    <button id="cam">CAMERA: follow</button>
+  </div>
+</div>
+<div id="feed" class="panel"></div>
+<div id="help">drive: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or a gamepad &nbsp;·&nbsp; <kbd>C</kbd> conveyor &nbsp;·&nbsp; sweep: click two corners on the water after START SWEEP &nbsp;·&nbsp; drag to orbit, wheel to zoom</div>
+
+<script type="importmap">
+{ "imports": { "three": "/viewer/vendor/three.module.js", "three/addons/controls/OrbitControls.js": "/viewer/vendor/OrbitControls.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ---------- lat/lon <-> local meters (x east, z south in three.js; we use y up) ----------
+const M_PER_DEG = 111320;
+let origin = [39.0912, -77.1534];
+const toXZ = (lat, lon) => {
+  const cos = Math.cos(origin[0] * Math.PI / 180);
+  return [ (lon - origin[1]) * M_PER_DEG * cos, -(lat - origin[0]) * M_PER_DEG ];   // z = -north
+};
+const toLatLon = (x, z) => {
+  const cos = Math.cos(origin[0] * Math.PI / 180);
+  return [ origin[0] + (-z) / M_PER_DEG, origin[1] + x / (M_PER_DEG * cos) ];
+};
+
+// ---------- scene ----------
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b1b33);
+scene.fog = new THREE.Fog(0x0b1b33, 250, 700);
+const camera = new THREE.PerspectiveCamera(55, 1, 0.5, 2000);
+camera.position.set(0, 60, 90);
+const controls = new OrbitControls(camera, canvas);
+controls.maxPolarAngle = Math.PI / 2 - 0.05;
+controls.target.set(0, 0, -20);
+scene.add(new THREE.HemisphereLight(0xbcd7ff, 0x0b1b33, 0.9));
+const sun = new THREE.DirectionalLight(0xffffff, 1.1); sun.position.set(80, 120, 40); scene.add(sun);
+
+// water
+const water = new THREE.Mesh(new THREE.PlaneGeometry(1400, 1400, 1, 1), new THREE.MeshStandardMaterial({ color: 0x123c5c, roughness: 0.35, metalness: 0.1 }));
+water.rotation.x = -Math.PI / 2; water.name = 'water'; scene.add(water);
+const gridHelper = new THREE.GridHelper(600, 60, 0x1e3f63, 0x16304f); gridHelper.position.y = 0.02; scene.add(gridHelper);
+
+// shore + station
+const shore = new THREE.Mesh(new THREE.BoxGeometry(260, 2, 24), new THREE.MeshStandardMaterial({ color: 0x3b5068 }));
+shore.position.set(0, 0.5, 12); scene.add(shore);
+const station = new THREE.Group();
+station.add(new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.6, 1.6), new THREE.MeshStandardMaterial({ color: 0xf08a24 })));
+const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 6), new THREE.MeshStandardMaterial({ color: 0xffffff })); mast.position.y = 3.8; station.add(mast);
+const ant = new THREE.Mesh(new THREE.SphereGeometry(0.35), new THREE.MeshStandardMaterial({ color: 0x2bc4d6, emissive: 0x2bc4d6, emissiveIntensity: 0.6 })); ant.position.y = 7; station.add(ant);
+station.position.set(0, 1.8, 6); scene.add(station);
+
+// the boat
+const boat = new THREE.Group();
+const hullMat = new THREE.MeshStandardMaterial({ color: 0xe8eef5, roughness: 0.6 });
+for (const sx of [-0.55, 0.55]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.3, 1.25), hullMat); p.position.set(sx, 0.15, 0); boat.add(p); }
+const bridge = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.08, 0.3), hullMat); bridge.position.set(0, 0.34, 0.15); boat.add(bridge);
+const basket = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.3, 0.55), new THREE.MeshStandardMaterial({ color: 0x4fbf8a, transparent: true, opacity: 0.7 })); basket.position.set(0, 0.3, 0.1); boat.add(basket);
+const conveyor = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.06, 0.6), new THREE.MeshStandardMaterial({ color: 0x111111 })); conveyor.position.set(0, 0.2, -0.5); conveyor.rotation.x = 0.6; boat.add(conveyor);
+const island = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.25, 0.25), new THREE.MeshStandardMaterial({ color: 0xf08a24 })); island.position.set(0, 0.5, 0.3); boat.add(island);
+const bmast = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.9), new THREE.MeshStandardMaterial({ color: 0xffffff })); bmast.position.set(0, 1.05, 0.3); boat.add(bmast);
+const nose = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.5, 8), new THREE.MeshStandardMaterial({ color: 0x2bc4d6 })); nose.rotation.x = -Math.PI / 2; nose.position.set(0, 0.35, -0.95); boat.add(nose);
+boat.scale.setScalar(2.2);
+scene.add(boat);
+let boatTarget = { x: 0, z: -15, h: 0 }; boat.position.set(0, 0, -15);
+const headingRing = new THREE.Mesh(new THREE.RingGeometry(2.2, 2.5, 48), new THREE.MeshBasicMaterial({ color: 0x2bc4d6, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
+headingRing.rotation.x = -Math.PI / 2; headingRing.position.y = 0.05; scene.add(headingRing);
+
+// trail points
+const trailGroup = new THREE.Group(); scene.add(trailGroup);
+const dotGeo = new THREE.SphereGeometry(0.45, 10, 8);
+const trailLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xa9bcd0, transparent: true, opacity: 0.5 }));
+scene.add(trailLine);
+const trailPts = [];
+const sigColor = (dbm) => dbm == null ? 0xe05a5a : dbm > -65 ? 0x4fbf8a : dbm > -75 ? 0xf2c94c : dbm > -85 ? 0xf08a24 : 0xe05a5a;
+function addTrail(m) {
+  const [x, z] = toXZ(m.lat, m.lon);
+  const d = new THREE.Mesh(dotGeo, new THREE.MeshStandardMaterial({ color: sigColor(m.signal_dbm), emissive: sigColor(m.signal_dbm), emissiveIntensity: 0.4 }));
+  d.position.set(x, 0.4, z); trailGroup.add(d);
+  trailPts.push(new THREE.Vector3(x, 0.4, z));
+  trailLine.geometry.setFromPoints(trailPts);
+}
+
+// fences + sweep path
+const fenceMat = new THREE.LineDashedMaterial({ color: 0x2bc4d6, dashSize: 2, gapSize: 1.5 });
+let drivenFence = null, sweepFence = null, sweepPath = null;
+function rectLine(c, mat, y = 0.1) {
+  const [x0, z0] = toXZ(c[0][0], c[0][1]); const [x1, z1] = toXZ(c[1][0], c[1][1]);
+  const pts = [[x0,z0],[x1,z0],[x1,z1],[x0,z1],[x0,z0]].map(([x,z]) => new THREE.Vector3(x, y, z));
+  const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat); l.computeLineDistances(); return l;
+}
+function setWorld(w) {
+  origin = w.origin;
+  if (drivenFence) scene.remove(drivenFence);
+  drivenFence = rectLine(w.fence_driven, fenceMat); scene.add(drivenFence);
+  if (sweepFence) scene.remove(sweepFence); if (sweepPath) scene.remove(sweepPath);
+  if (w.sweep_corners) { sweepFence = rectLine(w.sweep_corners, new THREE.LineDashedMaterial({ color: 0xf2c94c, dashSize: 1.5, gapSize: 1 }), 0.12); scene.add(sweepFence); }
+  if (w.sweep_points && w.sweep_points.length) {
+    const pts = w.sweep_points.map(([la, lo]) => { const [x, z] = toXZ(la, lo); return new THREE.Vector3(x, 0.15, z); });
+    sweepPath = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xf2c94c, transparent: true, opacity: 0.7 })); scene.add(sweepPath);
+  }
+  if (w.holder !== undefined) setHolder(w.holder);
+  if (w.events) w.events.forEach(feed);
+  if (w.link_up === false) linkEl.style.display = 'block';
+}
+
+// coverage grid
+let gridMesh = null, gridSize = 3, layer = 'covered';
+const layers = ['covered', 'ph', 'temp_c', 'turb_ntu', 'cond_us'];
+const ranges = { ph: [6.5, 8.5], temp_c: [18, 24], turb_ntu: [5, 30], cond_us: [350, 500] };
+const heat = (v, [lo, hi]) => { const t = Math.max(0, Math.min(1, (v - lo) / (hi - lo))); return new THREE.Color().setHSL((1 - t) * 0.4, 0.8, 0.5); };
+function setGrid(g) {
+  gridSize = g.size_m;
+  if (gridMesh) scene.remove(gridMesh);
+  if (!g.cells.length) return;
+  const geo = new THREE.PlaneGeometry(gridSize * 0.94, gridSize * 0.94);
+  gridMesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.55, side: THREE.DoubleSide }), g.cells.length);
+  const m = new THREE.Matrix4(); const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)); const s = new THREE.Vector3(1, 1, 1);
+  g.cells.forEach((c, i) => {
+    const x = (c.ix + 0.5) * gridSize, z = -(c.iy + 0.5) * gridSize;
+    m.compose(new THREE.Vector3(x, 0.08, z), q, s); gridMesh.setMatrixAt(i, m);
+    const v = c[layer];
+    gridMesh.setColorAt(i, layer === 'covered' || v == null ? new THREE.Color(0x2bc4d6) : heat(v, ranges[layer]));
+  });
+  gridMesh.instanceColor.needsUpdate = true; scene.add(gridMesh);
+  // trash
+  trashGroup.clear();
+  (g.trash || []).forEach(([la, lo]) => { const [x, z] = toXZ(la, lo); const t = new THREE.Mesh(new THREE.OctahedronGeometry(0.8), new THREE.MeshStandardMaterial({ color: 0xf08a24, emissive: 0xf08a24, emissiveIntensity: 0.5 })); t.position.set(x, 1, z); trashGroup.add(t); });
+  if (g.coverage_pct != null) el.cov.textContent = g.coverage_pct.toFixed(0) + ' %';
+}
+const trashGroup = new THREE.Group(); scene.add(trashGroup);
+let lastGrid = null;
+
+// ---------- HUD ----------
+const el = Object.fromEntries(['mode','batt','sig','hdg','dist','trail','cov','temp','ph','turb','cond'].map(id => [id, document.getElementById(id)]));
+const feedEl = document.getElementById('feed'), linkEl = document.getElementById('link');
+const fmt = (v, d = 1, u = '') => v == null ? '—' : v.toFixed(d) + u;
+function feed(m) {
+  const d = document.createElement('div');
+  const t = new Date((m.ts || Date.now() / 1000) * 1000).toLocaleTimeString();
+  d.innerHTML = `<b>${m.kind}</b> ${m.detail || ''} <span style="float:right">${t}</span>`;
+  feedEl.appendChild(d); feedEl.scrollTop = feedEl.scrollHeight;
+  while (feedEl.children.length > 80) feedEl.removeChild(feedEl.firstChild);
+}
+function onTlm(m) {
+  const [x, z] = toXZ(m.lat, m.lon);
+  boatTarget = { x, z, h: m.heading_deg };
+  el.mode.textContent = m.mode + (m.home_phase ? ' · ' + m.home_phase : '') + (m.wp_index != null ? ' · wp ' + m.wp_index : '');
+  el.mode.className = 'big mode-' + m.mode;
+  el.batt.textContent = fmt(m.batt_pct, 0, ' %'); el.sig.textContent = fmt(m.signal_dbm, 0, ' dBm');
+  el.hdg.textContent = fmt(m.heading_deg, 0, '°'); el.dist.textContent = fmt(Math.hypot(x, z), 0, ' m');
+  el.trail.textContent = m.trail_len ?? '—';
+  const w = m.water || {};
+  el.temp.textContent = fmt(w.temp_c, 1, ' °C'); el.ph.textContent = fmt(w.ph, 2); el.turb.textContent = fmt(w.turb_ntu, 1, ' NTU'); el.cond.textContent = fmt(w.cond_us, 0, ' µS');
+}
+
+// ---------- websocket ----------
+let ws, me = null, holder = null;
+const takeBtn = document.getElementById('take');
+function setHolder(h) { holder = h; takeBtn.textContent = h === me ? 'RELEASE CONTROL' : h ? 'SOMEONE ELSE DRIVES' : 'TAKE CONTROL'; takeBtn.classList.toggle('on', h === me); }
+function connect() {
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+  ws.onmessage = (e) => {
+    const m = JSON.parse(e.data);
+    switch (m.t) {
+      case 'world': if (m.you) me = m.you; setWorld(m); break;
+      case 'tlm': onTlm(m); break;
+      case 'trail': addTrail(m); break;
+      case 'evt': feed(m); break;
+      case 'ack': feed({ kind: 'ack ' + m.for, detail: (m.ok ? 'ok ' : 'refused ') + (m.msg || ''), ts: m.ts }); break;
+      case 'grid': lastGrid = m; setGrid(m); break;
+      case 'link': linkEl.style.display = m.up ? 'none' : 'block'; feed({ kind: m.up ? 'link up' : 'LINK LOST', ts: m.ts }); break;
+      case 'control': setHolder(m.holder); break;
+    }
+  };
+  ws.onclose = () => setTimeout(connect, 1000);
+}
+connect();
+const send = (o) => ws && ws.readyState === 1 && ws.send(JSON.stringify(o));
+
+// ---------- controls ----------
+takeBtn.onclick = () => send({ t: holder === me ? 'release' : 'take' });
+document.getElementById('home').onclick = () => send({ t: 'home' });
+document.getElementById('trash').onclick = () => send({ t: 'trash' });
+document.getElementById('layer').onclick = (e) => { layer = layers[(layers.indexOf(layer) + 1) % layers.length]; e.target.textContent = 'LAYER: ' + layer; if (lastGrid) setGrid(lastGrid); };
+let follow = true;
+document.getElementById('cam').onclick = (e) => { follow = !follow; e.target.textContent = 'CAMERA: ' + (follow ? 'follow' : 'free'); };
+
+// sweep: click two corners on the water
+let picking = false, corner1 = null;
+const sweepBtn = document.getElementById('sweep');
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+sweepBtn.onclick = () => { picking = !picking; corner1 = null; sweepBtn.textContent = picking ? 'CLICK CORNER 1' : 'START SWEEP'; sweepBtn.classList.toggle('on', picking); };
+canvas.addEventListener('pointerdown', (e) => { if (picking) { e._x = e.clientX; e._y = e.clientY; } });
+canvas.addEventListener('pointerup', (e) => {
+  if (!picking) return;
+  mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  const hit = ray.intersectObject(water)[0]; if (!hit) return;
+  const ll = toLatLon(hit.point.x, hit.point.z);
+  if (!corner1) { corner1 = ll; sweepBtn.textContent = 'CLICK CORNER 2'; return; }
+  send({ t: 'sweep', corners: [corner1, ll] });
+  picking = false; corner1 = null; sweepBtn.textContent = 'START SWEEP'; sweepBtn.classList.remove('on');
+});
+
+// keyboard + gamepad -> ctl at 10 Hz while we hold control
+const keys = {}; let conveyorOn = false;
+addEventListener('keydown', (e) => { keys[e.key.toLowerCase()] = true; if (e.key.toLowerCase() === 'c') conveyorOn = !conveyorOn; });
+addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+setInterval(() => {
+  if (holder !== me) return;
+  let th = (keys.w ? 1 : 0) - (keys.s ? 1 : 0), st = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+  const gp = navigator.getGamepads && navigator.getGamepads()[0];
+  if (gp) { th = -gp.axes[1] || th; st = gp.axes[2] || gp.axes[0] || st; if (gp.buttons[0]?.pressed) conveyorOn = true; if (gp.buttons[1]?.pressed) conveyorOn = false; }
+  const dz = (v) => Math.abs(v) < 0.08 ? 0 : v;
+  send({ t: 'ctl', throttle: dz(th) * 0.8, steer: dz(st) * 0.6, conveyor: conveyorOn });
+}, 100);
+
+// ---------- render ----------
+function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+const clock = new THREE.Clock();
+function frame() {
+  const dt = Math.min(0.1, clock.getDelta());
+  boat.position.x += (boatTarget.x - boat.position.x) * Math.min(1, dt * 4);
+  boat.position.z += (boatTarget.z - boat.position.z) * Math.min(1, dt * 4);
+  const want = -boatTarget.h * Math.PI / 180; let d = want - boat.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d));
+  boat.rotation.y += d * Math.min(1, dt * 4);
+  boat.position.y = 0.15 + Math.sin(clock.elapsedTime * 1.7) * 0.06;
+  headingRing.position.set(boat.position.x, 0.05, boat.position.z);
+  if (follow) { controls.target.lerp(new THREE.Vector3(boat.position.x, 0, boat.position.z), Math.min(1, dt * 2)); }
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+frame();
+</script>
+</body>
+</html>

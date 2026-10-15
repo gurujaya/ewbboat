@@ -1,0 +1,2 @@
+fastapi      # web server + websocket
+uvicorn[standard]

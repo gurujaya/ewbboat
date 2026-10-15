@@ -34,7 +34,8 @@ Laptop → station → boat. Sent ~10 times a second while someone holds control
 | `throttle` | float −1..+1 | forward is positive |
 | `steer` | float −1..+1 | positive turns right |
 | `conveyor` | bool | conveyor motor on/off |
-| `mode` | `"DRIVEN"` / `"AUTO"` / `"COMING_HOME"` | what the operator is asking for. The boat may refuse (see Modes below). |
+| `mode` | `"DRIVEN"` / `"AUTO"` / `"COMING_HOME"` | the mode the operator wants. Only a request when `ask` is true; otherwise it just echoes the boat's last reported mode. The boat may refuse (see Modes below). |
+| `ask` | bool, optional | true for a few seconds after a mode button is pressed. The boat ignores `mode` when this is false or missing. |
 
 Optional, only when starting a sweep:
 

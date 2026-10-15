@@ -9,11 +9,11 @@ Owner: Eric. Tick in the same commit that finishes the work.
 - [ ] Agree ports and the boat's fixed address with Guru and Zachary; put them in `radios.md`
 
 ## Phase 2: the library, on a table
-- [ ] `boatlink/messages.py`: encode/decode for `cmd`, `hb`, `tlm`, `trail`, `wps`, `ack`, `evt`; reject bad input
-- [ ] `boatlink/link.py`: UDP socket, `send()`, receive thread, dispatch by `t`, ignore `cmd` with an older `seq`
-- [ ] `boatlink/heartbeat.py`: send `hb` 4×/s; `on_link_lost` after 3 s; `on_link_back`
+- [x] `boatlink/messages.py`: encode/decode for `cmd`, `hb`, `tlm`, `trail`, `wps`, `ack`, `evt`; reject bad input
+- [x] `boatlink/link.py`: UDP socket, `send()`, receive thread, dispatch by `t`, ignore `cmd` with an older `seq`
+- [x] `boatlink/heartbeat.py`: send `hb` 4×/s; `on_link_lost` after 3 s; `on_link_back`
 - [ ] `boatlink/signal.py`: read dBm from the radio (start with `iw dev wlan0 link`; fall back to None)
-- [ ] `tests/`: round-trip every message type; seq ordering; link-lost at exactly 3 s with a fake clock
+- [x] `tests/`: round-trip every message type; seq ordering; link-lost at exactly 3 s with a fake clock
 - [ ] Two laptops on the lab Wi-Fi: `hb` both ways, `cmd` one way, `tlm` back
 - [ ] Configure both bridge radios; boat Pi and station Pi on them with fixed addresses
 - [ ] Same test through the real radios, not the lab Wi-Fi

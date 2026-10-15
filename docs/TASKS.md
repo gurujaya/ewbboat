@@ -10,7 +10,7 @@ Gate: parts are ordered or found.
 
 - [ ] Team agrees on `docs/ARCHITECTURE.md`
 - [x] Everyone has a name on a job (see `docs/TEAM.md`)
-- [ ] `docs/MESSAGES.md` reviewed by the Pi, station, and dashboard owners
+- [x] `docs/MESSAGES.md` reviewed by the Pi, station, and dashboard owners
 - [ ] Decide Arduino vs ESP32
 - [ ] Decide which Wi-Fi bridge radios
 - [ ] Decide ground station power (outlet or battery pack)
@@ -37,7 +37,7 @@ Gate: drive it from the dashboard while it sits on a table.
 - [ ] Dashboard: video panel, readings strip, battery, signal, mode
 - [ ] Dashboard: gamepad → `cmd` at 10 Hz, Take control lock
 - [ ] Dashboard: map with the boat marker (any map tiles; offline tiles later)
-- [ ] Comms: `boatlink` package done and tested on two laptops
+- [x] Comms: `boatlink` package done and tested on two laptops
 - [ ] Comms: both bridges configured, boat and station on the same network
 - [ ] Test: gamepad moves motors on the table through the whole chain
 
