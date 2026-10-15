@@ -29,11 +29,22 @@ Full write-up: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 | `dashboard/` | The web page: video, map, readings, gamepad driving | HTML + JS | `dashboard` | Sebastian |
 | `comms/` | Boat ↔ station link: the `boatlink` library, radios, antenna, range tests | Python + notes | `comms` | Eric |
 | `testing/` | Parts and BOM, sensor calibration, test logs, charts, showcase demo | markdown + sheets | `testing` | Nicholas, Mir |
+| `sim/` | Fake Arduino + lake physics + a three.js viewer; runs the real code with no hardware | Python + JS | any | Guru |
 | `docs/` | Architecture, message formats, team, tasks, testing | markdown | `main` | everyone |
 
 Who's who and what each person does: [docs/TEAM.md](docs/TEAM.md)
 
 Every job folder has a `README.md` (what it is and how it fits) and a `TASKS.md` (the checklist for that job). Start there.
+
+## Run it with no hardware
+
+```bash
+pip install -r boat-pi/requirements.txt -r ground-station/requirements.txt
+python sim/run.py
+# open http://localhost:8000/viewer
+```
+
+The real boat and station code against a fake Arduino and a fake lake. Drive it, sweep a rectangle, drive out of radio range and watch it come home. See [sim/README.md](sim/README.md).
 
 ## Getting started
 

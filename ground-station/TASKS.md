@@ -6,27 +6,27 @@
 - [ ] Decide station power with the team (outlet vs battery pack)
 
 ## Phase 2: table
-- [ ] `link.py`: wrap `comms/boatlink`; save every incoming message, surface link lost/back
-- [ ] `db.py`: schema for tlm, trail, evt, ack, runs, sweeps; insert on every message
-- [ ] `api.py`: FastAPI app serving `../dashboard/` and a `/ws` that pushes every message live
-- [ ] `control.py`: take-control lock, dashboard input → `cmd` at 10 Hz with `seq`
+- [x] `link.py`: wrap `comms/boatlink`; save every incoming message, surface link lost/back
+- [x] `db.py`: schema for tlm, trail, evt, ack, runs, sweeps; insert on every message
+- [x] `api.py`: FastAPI app serving `../dashboard/` and a `/ws` that pushes every message live
+- [x] `control.py`: take-control lock, dashboard input → `cmd` at 10 Hz with `seq`
 - [ ] `video.py`: re-serve the boat's RTSP stream to the browser
 - [ ] `setup/`: hostapd + dnsmasq so the station makes its own Wi-Fi; systemd unit for boot
 - [ ] `--fake-boat` mode that replays a CSV so dashboard work doesn't need hardware
 - [ ] Test: dashboard on a phone sees live readings from the boat on the table
 
 ## Phase 3: coming home
-- [ ] Store `trail` and `evt`; `/ws` pushes them; `/api/history` returns a run
-- [ ] `/api/export.csv` for a run (every tlm row with time and lat/lon)
+- [x] Store `trail` and `evt`; `/ws` pushes them; `/api/history` returns a run
+- [x] `/api/export.csv` for a run (every tlm row with time and lat/lon)
 - [ ] Show the boat's answer to a mode request (`ack`) on the dashboard feed
 - [ ] Range test support: log `signal_dbm` vs distance from the station; write the number in ARCHITECTURE
 - [ ] Test: 1 hour run; row counts match the boat's CSV
 
 ## Phase 4: autopilot and map
-- [ ] `sweep.py`: rectangle → lawnmower waypoints, row spacing from config, numbered; unit test
-- [ ] `/api/sweep`: accept corners, build the list, send `wps`, wait for `ack`
-- [ ] `grid.py`: 3 m squares, mark covered on each trail point, per-square averages of the four readings; unit test
-- [ ] `/api/grid` for the dashboard overlay and heat map; coverage %
+- [x] `sweep.py`: rectangle → lawnmower waypoints, row spacing from config, numbered; unit test
+- [x] `/api/sweep`: accept corners, build the list, send `wps`, wait for `ack`
+- [x] `grid.py`: 3 m squares, mark covered on each trail point, per-square averages of the four readings; unit test
+- [x] `/api/grid` for the dashboard overlay and heat map; coverage %
 - [ ] "Sweep what's missed": uncovered squares → new rectangle(s)
 - [ ] Test: full small sweep end to end
 

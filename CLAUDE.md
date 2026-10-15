@@ -17,6 +17,7 @@ ground-station/  Python 3. Link to boat, SQLite, FastAPI web server, map buildin
 dashboard/       Plain HTML + JS (no framework unless the team agrees). Video, map, readings, gamepad.
 comms/           boatlink/ (shared Python package: UDP, message encode/decode, heartbeat, signal) + radios, antenna, range tests.
 testing/         Parts list, sensor calibration, test logs, exported data and charts, showcase demo. Mostly markdown.
+sim/             physics.py + fake_arduino.py (pty) + run.py + headless_test.py + viewer/ (three.js). Runs the real boat-pi and ground-station code with no hardware.
 docs/            ARCHITECTURE, MESSAGES, TEAM, TASKS, TESTING.
 ```
 
@@ -35,6 +36,7 @@ Each job folder has a `README.md` and a `TASKS.md`. When you finish a task, tick
 - **No secrets in the repo.** Wi-Fi passwords, keys, and anything local go in `.env` or `*.local.json` (gitignored).
 - **Python style.** Standard library first. Dependencies go in that folder's `requirements.txt` with a comment saying why. Type hints on function signatures. `black` formatting.
 - **Arduino style.** One `.ino` plus small `.h/.cpp` files per concern (motors, sensors, serial). No blocking `delay()` in the main loop; use `millis()` timing.
+- **Sim first.** Anything in boat-pi, ground-station, or comms must still pass `python sim/headless_test.py` (about 8 minutes) before a pull request. Unit tests: `python -m pytest` in each folder.
 - **Tests.** Pure logic (bearing math, trail search, mixing formula, battery thresholds) gets a unit test in `tests/` inside that folder. Hardware-dependent code gets a manual test procedure written in `docs/TESTING.md`.
 
 ## When asked to implement something

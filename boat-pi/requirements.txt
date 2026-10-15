@@ -1,0 +1,1 @@
+pyserial  # talks to the Arduino over USB
