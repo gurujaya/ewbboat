@@ -6,7 +6,13 @@ import csv
 import os
 import time
 
-FIELDS = ["ts", "lat", "lon", "heading_deg", "gps_fix", "sats", "batt_v", "batt_pct", "signal_dbm", "mode", "left", "right", "conveyor", "temp_c", "ph", "turb_ntu", "cond_us", "trail_len", "wp_index"]
+# lat/lon are the filtered position (same as tlm); raw_lat/raw_lon are the GPS fix as it came
+# from the Arduino, so a run can be checked afterwards for how much the filter smoothed.
+FIELDS = [
+    "ts", "lat", "lon", "raw_lat", "raw_lon", "heading_deg", "speed_mps", "gps_fix", "sats",
+    "batt_v", "batt_pct", "signal_dbm", "mode", "home_phase", "left", "right", "conveyor",
+    "temp_c", "ph", "turb_ntu", "cond_us", "trail_len", "wp_index", "target_lat", "target_lon",
+]
 
 
 class CsvLogger:

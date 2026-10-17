@@ -9,7 +9,16 @@ DB_PATH = os.environ.get("STATION_DB", "station.sqlite")
 # where the station stands; the map and the grid are built around this
 ORIGIN = (float(os.environ.get("ORIGIN_LAT", "39.0912")), float(os.environ.get("ORIGIN_LON", "-77.1534")))
 
-GRID_M = 3.0                 # square size, matches GPS accuracy
+# The boat scoops a strip about as wide as the gap between its pontoons (Rev C: ~0.8 m; the belt
+# itself is 0.37 m, the hulls funnel into it). The map and the sweep are both built on that width.
+SCOOP_WIDTH_M = 0.8
+GRID_M = SCOOP_WIDTH_M       # a map square is one scoop wide: "covered" means the belt went over it
 DRIVEN_FENCE_M = 150.0       # placeholder until range testing; a box this far around the origin
-ROW_SPACING_M = 0.3 * 10     # placeholder for the sim: 3 m rows so a sweep finishes in minutes
+# Sweep rows 0.8 x the scoop width apart, so GPS error and current don't leave gaps between rows.
+# Override for a quick demo: ROW_SPACING_M=3 sweeps 5x faster and catches about a quarter.
+ROW_SPACING_M = float(os.environ.get("ROW_SPACING_M", str(round(0.8 * SCOOP_WIDTH_M, 2))))
+# Rows a boat-width apart need a U-turn tighter than the boat can make, so the sweep does every
+# other row first and then comes back for the ones in between (sweep.plan). In the simulator that
+# also caught far more drifting litter than a plain lawnmower (sim/montecarlo.py --turn-rows).
+SWEEP_TURN_ROWS = 2
 CMD_HZ = 10

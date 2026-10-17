@@ -1,42 +1,95 @@
 # Put the sim on a public link
 
-So anyone can open a URL and drive the boat. Uses Fly.io because it runs long-lived processes and WebSockets, which the station needs. Free tier is enough.
+So anyone on the team (or a judge) can open a URL and watch or drive the boat. This is a demo
+link only: the real ground station runs on a Pi on the shore and serves the same page over its
+own Wi-Fi.
 
-This is a demo link only. The real ground station runs on a Pi on the shore and serves the same page over its own Wi-Fi.
+## What the host has to run
 
-## One-time setup (about 5 minutes)
+The sim is **four long-running processes in one container** (the fake Arduino, the firmware
+compiled for the machine, the real boat-pi, the real ground station), talking to each other over
+local sockets, with a **WebSocket** to every browser. That rules out the static/serverless hosts:
 
-1. Install the Fly command line: https://fly.io/docs/flyctl/install/
-   - Mac: `brew install flyctl`
-   - Windows: `pwsh -Command "iwr https://fly.io/install.ps1 -useb | iex"`
-   - Linux: `curl -L https://fly.io/install.sh | sh`
-2. `fly auth signup` (or `fly auth login` if you have an account). It will ask for a card; the free allowance covers this.
-3. From the repo root, on the `sim` branch:
-   ```bash
-   fly launch --copy-config --name ewbboat --region iad --no-deploy
-   ```
-   If the name is taken, pick another; it becomes the URL. Say **no** to adding a Postgres or Redis.
-4. Deploy:
-   ```bash
-   fly deploy
-   ```
-   First build takes a couple of minutes. When it finishes:
-   ```
-   https://ewbboat.fly.dev/viewer
-   ```
+| Host | Can it run this? | Why |
+| --- | --- | --- |
+| Vercel, Netlify, GitHub Pages, Cloudflare Pages | **No** | They serve static files and short functions. No long-running process, no WebSocket server. (They could host a *recorded replay* of the viewer one day; not the live sim.) |
+| Fly.io | Yes | Already set up here (`fly.toml`, app `ewbboat`). Not free for new accounts since 2024; a machine that sleeps when idle costs about $0–2 a month. |
+| Hugging Face Spaces (Docker) | **Yes, free** | Free CPU, Docker, WebSockets. Sleeps after 48 h without visitors, wakes on the next visit. No card. |
+| Render (free web service) | **Yes, free** | Docker, WebSockets, 512 MB. Sleeps after 15 min idle; the first visitor waits ~30–60 s. No card. |
+| Koyeb (free instance) | Yes, free | Docker, WebSockets, one small instance, scales to zero. |
+| Google Cloud Run | Yes, free tier | WebSockets, scales to zero; needs a card on the account. |
+| Oracle Cloud "always free" VM | Yes, free | A real server; you install Docker and a reverse proxy yourself. Most work. |
 
-## Every time after that
+**Recommendation.** Hugging Face Spaces for a free link that stays up, or Fly if the ~$1/month is
+fine (it's the fastest to update: one command). Render is the free fallback.
+
+The container reads the web port from `$PORT` (every host above sets it), serves the viewer at
+`/viewer`, and passes the simulator's trash "ground truth" feed through on the same origin
+(`/api/sim/truth`), so the floating litter and the scooped count show on a public link too.
+
+---
+
+## Option A: Fly.io (already configured)
+
+One-time: `brew install flyctl`, then `fly auth login`. The app `ewbboat` already exists.
 
 ```bash
-git checkout sim && git pull
-fly deploy
+fly scale count 1 -a ewbboat      # one machine = one boat (two machines would be two different boats)
+fly deploy --remote-only          # builds the Dockerfile on Fly's builder; ~3 min the first time
 ```
 
-## Good to know
+Then open **https://ewbboat.fly.dev/viewer**.
 
-- **One boat, many viewers.** Everyone who opens the link sees the same boat. Only one person holds control at a time (Take control). Others watch.
-- **It sleeps.** With nobody connected the machine stops; the first visitor waits ~5 s while it wakes and the boat starts from the launch spot again.
-- **Reset it.** `fly machine restart` puts the boat back at the start.
-- **Change the scenario.** Edit the `CMD` line in `Dockerfile` (e.g. add `--range 120` or `--drain 20`) and `fly deploy`.
-- **Logs.** `fly logs` shows the boat's event stream live.
-- **Cost.** A shared-cpu-1x that sleeps when idle sits inside Fly's free allowance. Check `fly dashboard` if unsure.
+**If `fly deploy` fails with `x509: certificate signed by unknown authority`** (it does from some
+Macs: something on the machine intercepts the TLS to Fly's remote builder), build the image
+locally and deploy from it instead. Docker Desktop must be running; its credential helper lives
+inside Docker.app, so put it on the PATH first:
+
+```bash
+export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
+TAG=registry.fly.io/ewbboat:v$(date +%Y%m%d%H%M)
+docker build --platform linux/amd64 -t $TAG .      # Fly machines are amd64; ~5 min on an Apple-silicon Mac
+fly auth docker && docker push $TAG
+fly deploy -a ewbboat --image $TAG
+```
+
+- With nobody connected the machine stops; the first visitor waits ~5 s while it wakes, and the
+  boat starts at the jetty again.
+- `fly logs -a ewbboat` shows the boat's events live. `fly machine restart` resets the boat.
+- `.github/workflows/fly-deploy.yml` redeploys on every push to `main` if the repo has a
+  `FLY_API_TOKEN` secret (`fly tokens create deploy` → GitHub → Settings → Secrets).
+
+## Option B: Hugging Face Spaces (free)
+
+1. Make a free account at https://huggingface.co, then **New Space** → name it (e.g. `ewb-boat`),
+   SDK **Docker**, hardware **CPU basic (free)**, visibility Public.
+2. Spaces serve on port **7860**. Add this line to the Space's `README.md` front matter:
+   ```yaml
+   app_port: 7860
+   ```
+   (The container reads `$PORT`; Spaces don't set it, so also add `ENV PORT=7860` to the Dockerfile
+   in the Space, or keep the repo's Dockerfile and set the port in the Space settings → Variables:
+   `PORT=7860`.)
+3. Push this repo to the Space (it's a git remote):
+   ```bash
+   git remote add space https://huggingface.co/spaces/<you>/ewb-boat
+   git push space main
+   ```
+   The Space builds the Dockerfile and starts it. Open `https://<you>-ewb-boat.hf.space/viewer`.
+4. It sleeps after 48 h with no visitors and wakes on the next one (about a minute).
+
+## Option C: Render (free)
+
+1. Free account at https://render.com → **New → Web Service** → connect the GitHub repo.
+2. Runtime **Docker**, instance type **Free**. Render sets `$PORT` itself; nothing to configure.
+3. Deploy. The URL is `https://<service>.onrender.com/viewer`.
+4. Free services sleep after 15 minutes idle; the first visitor waits ~30–60 s. Redeploys on every push.
+
+## Good to know, any host
+
+- **One boat, many viewers.** Everyone who opens the link sees the same boat. One person holds
+  control at a time (Drive); the rest watch. If two machines/instances run, they are two boats.
+- **Scenario.** Add flags to the `CMD` line in `Dockerfile`, e.g. `"--range", "120"` or
+  `"--drain", "20"`, and redeploy. Row spacing: an env var `ROW_SPACING_M=3` for quick demos.
+- **Memory.** About 150 MB; 256–512 MB instances are fine.
+- **Not for the lake.** The station on the shore runs from `ground-station/`, not from a cloud.

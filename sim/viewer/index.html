@@ -2,298 +2,293 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Boat viewer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Boat Station View</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f3efe7' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M3 15c2 1.6 4 1.6 6 0s4-1.6 6 0 4 1.6 6 0M3 19c2 1.6 4 1.6 6 0s4-1.6 6 0 4 1.6 6 0M7 12V8.5L12 4l5 4.5V12'/%3E%3C/svg%3E">
+<!-- Everything is vendored under /viewer/vendor so this page works at the lake with no internet.
+     Versions and licenses: vendor/README.md -->
+<script src="/viewer/vendor/tailwind.js"></script>
+<script src="/viewer/vendor/motion.js"></script>
 <style>
-  :root { --bg:#0b1b33; --panel:#14294a; --ink:#fff; --muted:#a9bcd0; --teal:#2bc4d6; --orange:#f08a24; --green:#4fbf8a; --red:#e05a5a; --yellow:#f2c94c; }
-  * { box-sizing:border-box; }
-  html, body { margin:0; height:100%; background:var(--bg); color:var(--ink); font:14px/1.4 Calibri, "Segoe UI", system-ui, sans-serif; overflow:hidden; }
-  #c { position:absolute; inset:0; display:block; }
-  #hud { position:absolute; left:16px; top:16px; width:300px; display:flex; flex-direction:column; gap:10px; pointer-events:none; }
-  .panel { background:rgba(20,41,74,.92); border:1px solid #2e4a6e; border-radius:10px; padding:12px 14px; pointer-events:auto; }
-  .panel h1 { margin:0 0 6px; font-size:13px; color:var(--muted); font-weight:600; letter-spacing:.02em; }
-  .big { font-size:26px; font-weight:700; }
-  .row { display:flex; justify-content:space-between; gap:8px; margin:3px 0; }
-  .row b { color:var(--teal); }
-  .mode-DRIVEN { color:var(--teal); } .mode-AUTO { color:var(--yellow); } .mode-COMING_HOME { color:var(--orange); }
-  .btns { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-  button { font:inherit; font-weight:700; padding:9px 10px; border-radius:8px; border:1px solid var(--teal); background:transparent; color:var(--teal); cursor:pointer; }
-  button.primary { background:var(--orange); border-color:var(--orange); color:var(--bg); }
-  button.danger { border-color:var(--red); color:var(--red); }
-  button.on { background:var(--teal); color:var(--bg); }
-  #feed { position:absolute; right:16px; top:16px; width:320px; max-height:45vh; overflow:auto; font-size:12px; }
-  #feed div { padding:3px 0; border-bottom:1px solid #1f3658; color:var(--muted); }
-  #feed div b { color:var(--ink); }
-  #link { position:absolute; left:50%; top:16px; transform:translateX(-50%); padding:8px 16px; border-radius:999px; font-weight:700; background:var(--red); display:none; }
-  #help { position:absolute; left:16px; bottom:16px; color:var(--muted); font-size:12px; }
-  kbd { background:#1f3658; padding:1px 5px; border-radius:4px; font-family:inherit; }
+  @font-face { font-family: "Instrument Sans Var"; src: url(/viewer/vendor/fonts/instrument-sans.woff2) format("woff2"); font-weight: 400 700; font-display: swap; }
+</style>
+<style type="text/tailwindcss">
+  @theme {
+    --font-sans: "Instrument Sans Var", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --color-ink: #06090f;
+    --color-bone: #f3efe7;
+    --color-mist: #c3ccd1;
+  }
+  /* plain variables, not @theme: Tailwind drops theme values no utility uses, and these are
+     only read through var() from inline styles */
+  :root { --color-driven: #8fd3ff; --color-auto: #f2c66d; --color-home: #c4b1ff; --color-idle: #c3ccd1; }
+  @layer base {
+    html, body { height: 100%; }
+    body { font-feature-settings: "ss01"; }
+    ::selection { background: rgb(243 239 231 / 0.2); }
+  }
+  /* numbers line up in columns; one typeface for everything, like the reference */
+  @utility num { font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  @utility scroll-thin { scrollbar-width: thin; scrollbar-color: rgb(243 239 231 / 0.12) transparent; }
+  @layer components {
+    /* a "panel" is now just a block of content floating on the scene; a soft scrim behind the
+       whole rail keeps it readable over bright water */
+    .panel { @apply relative; }
+    .panel-h { @apply flex items-baseline justify-between pb-2; }
+    .label { @apply text-[12px] tracking-[0.02em] text-mist/65; }
+    .big { @apply num text-[34px] leading-none font-normal tracking-[-0.03em] text-bone; }
+    .mid { @apply num text-[20px] leading-none font-normal tracking-[-0.02em] text-bone; }
+    .unit { @apply text-[12px] text-mist/55; }
+    .chip { @apply inline-flex h-7 items-center gap-2 px-2 text-[12.5px] text-mist/80; }
+    .dot { @apply size-1.5 shrink-0 rounded-full; }
+    .btn { @apply inline-flex h-8 items-center justify-center gap-1.5 px-1 text-[13px] text-bone/80 underline decoration-bone/30 underline-offset-[5px] transition-[color,text-decoration-color] duration-150 select-none hover:text-bone hover:decoration-bone/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bone/60 disabled:pointer-events-none disabled:opacity-35; }
+    .btn-primary { @apply rounded-full bg-bone px-4 text-ink no-underline hover:bg-white; }
+    .seg { @apply flex items-center gap-4; }
+    .seg > button { @apply h-7 text-[13px] text-mist/60 transition-colors duration-150 hover:text-bone aria-pressed:text-bone aria-pressed:underline aria-pressed:decoration-bone/50 aria-pressed:underline-offset-[6px]; }
+    .mode-btn { @apply relative inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-full border border-bone/20 bg-transparent text-[13.5px] text-bone/85 transition-[background-color,border-color,color] duration-200 select-none hover:border-bone/45 hover:text-bone focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bone/60 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:border-bone/20; }
+    .mode-btn[data-state="active"] { background: var(--color-bone); border-color: var(--color-bone); color: var(--color-ink); }
+    .mode-btn[data-state="pending"] { border-color: var(--mc); color: var(--mc); }
+    .mode-btn[data-state="pending"]::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; border: 1px solid var(--mc); animation: pend 1.1s ease-in-out infinite; }
+    .bar { @apply relative h-px overflow-visible bg-bone/15; }
+    .bar > i { @apply absolute -top-px bottom-[-1px] left-0 h-[3px]; }
+    .kbd { @apply inline-flex h-5 min-w-5 items-center justify-center rounded border border-bone/20 px-1 text-[10.5px] text-mist/80; }
+    .rail { @apply scroll-thin fixed top-16 bottom-4 z-10 flex flex-col gap-6 overflow-y-auto px-6 pb-2 max-lg:top-auto max-lg:right-0 max-lg:bottom-[calc(56px+env(safe-area-inset-bottom))] max-lg:left-0 max-lg:hidden max-lg:max-h-[62vh] max-lg:w-auto max-lg:gap-5 max-lg:px-5 max-lg:pt-4 max-lg:data-open:flex; }
+    /* bigger things to hit on a touch screen */
+    .seg > button { @apply pointer-coarse:h-9; }
+    .btn { @apply pointer-coarse:h-10; }
+    .rail-l { @apply left-0 w-[340px] bg-[linear-gradient(to_right,rgb(6_9_15/0.9),rgb(6_9_15/0.72)_70%,rgb(6_9_15/0.35))] backdrop-blur-[6px]; }
+    .rail-r { @apply right-0 w-[360px] bg-[linear-gradient(to_left,rgb(6_9_15/0.9),rgb(6_9_15/0.72)_70%,rgb(6_9_15/0.35))] backdrop-blur-[6px]; }
+    .hairline { @apply border-t border-bone/10 pt-5; }
+  }
+  @keyframes pend { 0%, 100% { opacity: 0.15; } 50% { opacity: 0.9; } }
+
+  /* labels that follow points in the 3D scene: plain text with a shadow, no boxes */
+  .scene-label { @apply px-1 text-[11px] whitespace-nowrap text-bone/90 [text-shadow:0_1px_3px_rgb(0_0_0/0.8),0_0_12px_rgb(0_0_0/0.5)]; }
+  .scene-label.is-ring { @apply num text-[10px] text-mist/55; }
+  .scene-label.is-trash { @apply text-orange-200; }
+  .scene-label.is-home { @apply text-bone; }
+  .scene-label.is-boat { @apply flex items-center gap-1.5 transition-opacity duration-300; }
+  @media (prefers-reduced-motion: reduce) { .mode-btn[data-state="pending"]::after { animation: none; opacity: 0.6; } }
 </style>
 </head>
-<body>
-<canvas id="c"></canvas>
-<div id="link">LINK LOST</div>
-<div id="hud">
-  <div class="panel">
-    <h1>Boat</h1>
-    <div class="big" id="mode">—</div>
-    <div class="row"><span>battery</span><b id="batt">—</b></div>
-    <div class="row"><span>signal</span><b id="sig">—</b></div>
-    <div class="row"><span>heading</span><b id="hdg">—</b></div>
-    <div class="row"><span>from station</span><b id="dist">—</b></div>
-    <div class="row"><span>trail points</span><b id="trail">—</b></div>
-    <div class="row"><span>coverage</span><b id="cov">—</b></div>
+<body class="overflow-hidden bg-ink font-sans text-bone antialiased">
+
+<canvas id="scene" class="fixed inset-0 block size-full touch-none"></canvas>
+<div id="labels" class="pointer-events-none fixed inset-0"></div>
+<div id="vignette" class="pointer-events-none fixed inset-0 opacity-0 shadow-[inset_0_0_160px_40px_rgb(239_68_68/0.28)]"></div>
+<!-- a soft scrim along the top so the bar reads over a bright horizon -->
+<div class="pointer-events-none fixed inset-x-0 top-0 h-24 bg-[linear-gradient(to_bottom,rgb(6_9_15/0.7),transparent)]"></div>
+
+<!-- ============================== top bar ============================== -->
+<header class="pointer-events-none fixed inset-x-0 top-0 z-20 flex h-14 items-center gap-3 px-4 whitespace-nowrap sm:h-16 sm:gap-5 sm:px-6 lg:gap-6">
+  <div class="pointer-events-auto flex items-center gap-2.5" data-enter>
+    <svg viewBox="0 0 24 24" class="size-[18px] text-bone" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 15c2 1.6 4 1.6 6 0s4-1.6 6 0 4 1.6 6 0"/><path d="M3 19c2 1.6 4 1.6 6 0s4-1.6 6 0 4 1.6 6 0"/><path d="M7 12V8.5L12 4l5 4.5V12"/></svg>
+    <span class="text-[12px] tracking-[0.14em] text-bone uppercase sm:text-[13px]">Surface vessel</span>
+    <span class="text-[12.5px] text-mist/55 max-xl:hidden">EWB Montgomery College</span>
   </div>
-  <div class="panel">
-    <h1>Water</h1>
-    <div class="row"><span>temp</span><b id="temp">—</b></div>
-    <div class="row"><span>pH</span><b id="ph">—</b></div>
-    <div class="row"><span>turbidity</span><b id="turb">—</b></div>
-    <div class="row"><span>conductivity</span><b id="cond">—</b></div>
+
+  <div id="modePill" class="pointer-events-auto flex h-10 min-w-0 items-center gap-2.5" data-enter style="--mc: var(--color-idle)">
+    <span class="relative flex size-2 shrink-0"><span id="modePing" class="absolute inline-flex size-full rounded-full opacity-60" style="background: var(--mc)"></span><span class="relative inline-flex size-2 rounded-full" style="background: var(--mc)"></span></span>
+    <span id="modeName" class="text-[14px] text-bone">Waiting for boat</span>
+    <span id="modeSub" class="num truncate text-[13px] text-mist/60 max-lg:hidden"></span>
   </div>
-  <div class="panel btns">
-    <button id="take" class="primary">TAKE CONTROL</button>
-    <button id="sweep">START SWEEP</button>
-    <button id="home" class="danger">COME HOME</button>
-    <button id="trash">MARK TRASH</button>
-    <button id="layer">LAYER: covered</button>
-    <button id="cam">CAMERA: follow</button>
+
+  <div class="flex-1"></div>
+
+  <div class="pointer-events-auto flex items-center gap-1 max-lg:hidden" data-enter>
+    <span class="chip" title="Browser to ground station"><span id="chipWsDot" class="dot bg-slate-500"></span>Station</span>
+    <span class="chip" title="Ground station to boat radio link"><span id="chipLinkDot" class="dot bg-slate-500"></span><span id="chipLink">Boat link</span></span>
+    <span class="chip" title="GPS fix and satellites"><span id="chipGpsDot" class="dot bg-slate-500"></span><span id="chipGps" class="num">GPS</span></span>
+  </div>
+
+  <div class="seg pointer-events-auto gap-3 sm:gap-4" role="group" aria-label="Camera" data-enter>
+    <button data-cam="follow" aria-pressed="true" title="Follow the boat (1)">Follow</button>
+    <button data-cam="orbit" aria-pressed="false" title="Free camera (2)">Free</button>
+    <button data-cam="top" aria-pressed="false" title="Top-down map (3)">Map</button>
+  </div>
+</header>
+
+<!-- link-lost banner -->
+<div id="banner" class="pointer-events-none fixed inset-x-0 top-[72px] z-30 hidden justify-center px-3">
+  <div class="pointer-events-auto flex max-w-xl items-start gap-3 rounded-2xl bg-[#2a0f12]/90 px-5 py-3.5 shadow-[0_20px_50px_-20px_rgb(0_0_0/0.9)] backdrop-blur-md">
+    <svg viewBox="0 0 24 24" class="mt-0.5 size-5 shrink-0 text-red-300" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 2l20 20"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M5 12.9a10 10 0 0 1 5.2-2.8"/><path d="M19 12.9a10 10 0 0 0-2.3-1.6"/><path d="M2 8.8a15 15 0 0 1 4.2-2.6"/><path d="M22 8.8A15 15 0 0 0 10.7 5"/><circle cx="12" cy="20" r="0.6"/></svg>
+    <div>
+      <div class="flex items-baseline gap-2"><span class="text-[14px] text-red-100">Link to boat lost</span><span id="bannerTime" class="num text-[12.5px] text-red-200/80">0 s</span></div>
+      <p class="mt-0.5 text-[12.5px] leading-relaxed text-red-100/65">The boat is running its lost-signal rules on its own: stop and wait 10 s, back up to the last point with good signal, then follow the trail home. Showing last known position.</p>
+    </div>
   </div>
 </div>
-<div id="feed" class="panel"></div>
-<div id="help">drive: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or a gamepad &nbsp;·&nbsp; <kbd>C</kbd> conveyor &nbsp;·&nbsp; sweep: click two corners on the water after START SWEEP &nbsp;·&nbsp; drag to orbit, wheel to zoom</div>
+
+<!-- sweep picker hint -->
+<div id="pickHint" class="pointer-events-none fixed inset-x-0 top-[72px] z-30 hidden justify-center px-3">
+  <div class="pointer-events-auto flex items-center gap-4 rounded-full bg-ink/85 py-2 pr-2 pl-4 backdrop-blur-md">
+    <span class="size-2 rounded-full bg-amber-300"></span>
+    <span id="pickText" class="text-[13px] text-bone">Click the first corner of the sweep area on the water</span>
+    <span id="pickDims" class="num text-[13px] text-amber-200"></span>
+    <button id="pickCancel" class="btn h-7 px-2 text-[12px]">Cancel <span class="kbd">Esc</span></button>
+  </div>
+</div>
+
+<!-- ============================== left rail ============================== -->
+<aside id="railL" class="rail rail-l">
+
+  <section class="panel" data-enter>
+    <div class="panel-h"><span class="label">Vehicle</span><span id="lastSeen" class="num text-[12px] text-mist/50">no data</span></div>
+
+    <div class="grid grid-cols-[auto_1fr] items-center gap-5">
+      <!-- compass: the card turns, the lubber line at the top stays put -->
+      <svg viewBox="-50 -50 100 100" class="size-[88px]" aria-label="Heading">
+        <circle r="47" fill="none" stroke="rgb(243 239 231 / 0.1)"/>
+        <g id="compassCard">
+          <g id="compassTicks" stroke="rgb(243 239 231 / 0.25)"></g>
+          <g class="num" font-size="9" fill="rgb(195 204 209 / 0.9)" text-anchor="middle" dominant-baseline="central">
+            <text y="-33" fill="#f3efe7">N</text><text x="33">E</text><text y="33">S</text><text x="-33">W</text>
+          </g>
+        </g>
+        <path d="M0 -49 L-3.5 -42 L3.5 -42 Z" fill="#f3efe7"/>
+        <g id="compassBoat" fill="none" stroke="#f3efe7" stroke-width="1.4" stroke-linejoin="round"><path d="M0 -14 L7 10 L0 6 L-7 10 Z" fill="rgb(243 239 231 / 0.12)"/></g>
+      </svg>
+      <div class="min-w-0">
+        <div class="flex items-baseline gap-1"><span id="hdg" class="big">---</span><span class="unit">&deg;</span></div>
+        <div class="mt-3 grid grid-cols-2 gap-x-4">
+          <div><div class="label">Speed</div><div class="mt-0.5 flex items-baseline gap-1"><span id="spd" class="mid">--</span><span class="unit">m/s</span></div></div>
+          <div><div class="label">From station</div><div class="mt-0.5 flex items-baseline gap-1"><span id="dist" class="mid">--</span><span class="unit">m</span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hairline mt-5">
+      <div class="flex items-baseline justify-between"><span class="label">Battery</span><span class="num text-[13px]"><span id="batt" class="text-bone">--</span><span class="text-mist/50"> % &middot; </span><span id="battV" class="text-mist/70">-- V</span></span></div>
+      <div class="bar mt-3"><i id="battBar" class="bg-emerald-400" style="width:0%"></i>
+        <span class="absolute top-[-3px] left-[10%] h-[7px] w-px bg-bone/40"></span><span class="absolute top-[-3px] left-[20%] h-[7px] w-px bg-bone/40"></span><span class="absolute top-[-3px] left-[30%] h-[7px] w-px bg-bone/40"></span>
+      </div>
+      <div class="num relative mt-2 h-3 text-[10.5px] text-mist/45" title="10 % motors off · 20 % come home · 30 % warning">
+        <span class="absolute left-[10%] -translate-x-1/2">10</span><span class="absolute left-[20%] -translate-x-1/2">20</span><span class="absolute left-[30%] -translate-x-1/2">30</span>
+        <span class="absolute right-0">thresholds</span>
+      </div>
+    </div>
+
+    <div class="hairline mt-5">
+      <div class="flex items-baseline justify-between"><span class="label">Signal</span><span class="num text-[13px]"><span id="sig" class="text-bone">--</span><span class="text-mist/50"> dBm</span> <span id="sigQ" class="ml-1 text-[12px] text-mist/70"></span></span></div>
+      <svg id="sigSpark" class="mt-2 h-10 w-full" preserveAspectRatio="none" viewBox="0 0 100 40"></svg>
+      <div class="mt-0.5 flex justify-between text-[10.5px] text-mist/45"><span>last 2 min</span><span class="num">- - good above -75</span></div>
+    </div>
+
+    <div class="hairline mt-5">
+      <div class="flex items-center justify-between"><span class="label">Motors</span><span id="convChip" class="inline-flex items-center gap-1.5 text-[12px] text-mist/55"><span id="convDot" class="dot bg-slate-600"></span>Conveyor off</span></div>
+      <div class="mt-3 space-y-3">
+        <div class="grid grid-cols-[14px_1fr_44px] items-center gap-3"><span class="num text-[11px] text-mist/55">L</span><div class="bar"><span class="absolute top-[-3px] left-1/2 h-[7px] w-px bg-bone/30"></span><i id="motL" class="bg-sky-300"></i></div><span id="motLv" class="num text-right text-[12.5px] text-mist/80">0.00</span></div>
+        <div class="grid grid-cols-[14px_1fr_44px] items-center gap-3"><span class="num text-[11px] text-mist/55">R</span><div class="bar"><span class="absolute top-[-3px] left-1/2 h-[7px] w-px bg-bone/30"></span><i id="motR" class="bg-sky-300"></i></div><span id="motRv" class="num text-right text-[12.5px] text-mist/80">0.00</span></div>
+      </div>
+    </div>
+
+    <div class="hairline mt-5 grid grid-cols-3">
+      <div><div class="label">Fence</div><div id="fence" class="mid mt-1 text-slate-100">--</div></div>
+      <div><div class="label">Trail</div><div id="trail" class="mid mt-1">--</div></div>
+      <div><div class="label">Covered</div><div id="cov" class="mid mt-1">--</div></div>
+    </div>
+  </section>
+
+  <section class="panel hairline" data-enter>
+    <div class="panel-h"><span class="label">Water quality</span><span class="text-[12px] text-mist/45">live &middot; 2 min</span></div>
+    <div id="water" class="grid grid-cols-2 gap-x-5 gap-y-4"></div>
+  </section>
+</aside>
+
+<!-- ============================== right rail ============================== -->
+<aside id="railR" class="rail rail-r">
+
+  <section class="panel" data-enter>
+    <div class="panel-h"><span class="label">Command</span><span id="ctlState" class="text-[12px] text-mist/55">Nobody is driving</span></div>
+    <div class="flex gap-2">
+      <button class="mode-btn" data-mode="DRIVEN" style="--mc: var(--color-driven)" title="Take control and drive (DRIVEN)">Drive</button>
+      <button class="mode-btn" data-mode="AUTO" style="--mc: var(--color-auto)" title="Draw a rectangle; the boat mows it (AUTO)">Sweep</button>
+      <button class="mode-btn" data-mode="COMING_HOME" style="--mc: var(--color-home)" title="Follow the trail home (COMING_HOME)">Home</button>
+    </div>
+    <p id="modeHint" class="mt-3 min-h-[36px] text-[12.5px] leading-snug text-mist/60">The boat decides. Buttons ask; the highlighted mode is what the boat reports.</p>
+    <div class="mt-1 flex items-center gap-5">
+      <button id="btnRelease" class="btn" disabled title="Hand control back">Release</button>
+      <button id="btnTrash" class="btn" title="Pin trash at the boat's position">Mark trash</button>
+      <a id="btnExport" class="btn" href="/api/export.csv" download title="Every telemetry row as a spreadsheet">Export CSV</a>
+    </div>
+  </section>
+
+  <section class="panel hairline" data-enter>
+    <div class="panel-h"><span class="label">Chart</span>
+      <div class="seg" role="group" aria-label="Chart zoom">
+        <button data-chart="area" aria-pressed="true">Area</button>
+        <button data-chart="boat" aria-pressed="false">Boat</button>
+      </div>
+    </div>
+    <canvas id="minimap" class="block aspect-[4/3] w-full cursor-crosshair rounded-xl" title="Click to point the camera here"></canvas>
+  </section>
+
+  <section id="sweepCard" class="panel hairline" data-enter>
+    <div class="panel-h"><span class="label">Sweep</span><span id="sweepCount" class="num text-[12.5px] text-mist/60">no sweep</span></div>
+    <div class="bar"><i id="sweepBar" class="bg-amber-300" style="width:0%"></i></div>
+    <div id="trashRow" class="mt-4 hidden items-baseline justify-between" title="Ground truth from the simulator. The real boat can't count this.">
+      <span class="label">Trash scooped</span>
+      <span class="flex items-baseline gap-2"><span id="trashCount" class="mid">0 / 0</span><span class="text-[10px] tracking-[0.12em] text-mist/40 uppercase">sim</span></span>
+    </div>
+    <div class="mt-4 flex items-center justify-between"><span class="label">Map layer</span></div>
+    <div class="seg mt-1.5" role="group" aria-label="Map layer" id="layers">
+      <button data-layer="covered" aria-pressed="true">Covered</button>
+      <button data-layer="ph" aria-pressed="false">pH</button>
+      <button data-layer="temp_c" aria-pressed="false">Temp</button>
+      <button data-layer="turb_ntu" aria-pressed="false">Turbidity</button>
+      <button data-layer="cond_us" aria-pressed="false">Cond.</button>
+    </div>
+    <div id="legend" class="mt-3 hidden">
+      <div id="legendRamp" class="h-1 rounded-full"></div>
+      <div class="num mt-1 flex justify-between text-[11px] text-mist/60"><span id="legendLo"></span><span id="legendHi"></span></div>
+    </div>
+  </section>
+
+  <section class="panel hairline flex min-h-[200px] flex-1 flex-col" data-enter>
+    <div class="panel-h"><span class="label">Events</span><span id="evtCount" class="num text-[12px] text-mist/50">0</span></div>
+    <ol id="events" class="scroll-thin min-h-0 flex-1 overflow-y-auto" aria-live="polite"></ol>
+  </section>
+</aside>
+
+<!-- ============================== bottom ============================== -->
+<div class="pointer-events-none fixed inset-x-0 bottom-5 z-10 flex flex-col items-center gap-3 px-3 max-lg:bottom-[calc(64px+env(safe-area-inset-bottom))]">
+  <div id="toasts" class="flex w-full max-w-sm flex-col items-stretch gap-2"></div>
+
+  <div id="driveHud" class="pointer-events-auto hidden items-center gap-4 rounded-full bg-ink/80 py-2 pr-4 pl-2 backdrop-blur-md sm:gap-6 sm:py-2.5 sm:pr-6 sm:pl-3">
+    <!-- the stick: on a touch screen, drag it (let go = stop); with a keyboard it just shows what W A S D are doing -->
+    <div id="joy" class="relative size-[88px] shrink-0 touch-none select-none rounded-full border border-bone/15 bg-bone/[0.04] pointer-coarse:size-[120px]" aria-label="Drive stick: drag to steer, let go to stop" role="slider" aria-valuetext="stopped">
+      <span class="pointer-events-none absolute inset-x-1/2 inset-y-2 w-px bg-bone/10"></span><span class="pointer-events-none absolute inset-x-2 inset-y-1/2 h-px bg-bone/10"></span>
+      <span id="stick" class="pointer-events-none absolute top-1/2 left-1/2 size-5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-bone shadow-[0_2px_10px_rgb(0_0_0/0.5)] pointer-coarse:size-8"></span>
+    </div>
+    <div class="grid grid-cols-2 gap-x-4 sm:gap-x-5">
+      <span class="label">Throttle</span><span class="label">Steer</span>
+      <span id="hudTh" class="mid mt-0.5">0.00</span><span id="hudSt" class="mid mt-0.5">0.00</span>
+    </div>
+    <div class="h-8 w-px bg-bone/10"></div>
+    <div class="flex flex-col gap-1 text-[11.5px] text-mist/70 pointer-coarse:hidden">
+      <span class="flex items-center gap-1"><span class="kbd">W</span><span class="kbd">A</span><span class="kbd">S</span><span class="kbd">D</span> drive</span>
+      <span class="flex items-center gap-1"><span class="kbd">C</span> conveyor <span id="hudConv" class="ml-1 text-mist/50">off</span></span>
+    </div>
+    <div class="flex flex-col gap-2 pointer-fine:hidden">
+      <button id="btnConv" class="h-9 rounded-full border border-bone/25 px-3 text-[12.5px] text-bone/85 aria-pressed:border-emerald-300/60 aria-pressed:bg-emerald-300/15 aria-pressed:text-emerald-100" aria-pressed="false">Conveyor</button>
+      <button id="btnReleaseHud" class="h-9 rounded-full border border-bone/25 px-3 text-[12.5px] text-bone/85">Release</button>
+    </div>
+    <span id="padChip" class="hidden items-center gap-1.5 text-[11.5px] text-emerald-200"><span class="dot bg-emerald-300"></span>Gamepad</span>
+  </div>
+</div>
+<div id="hint" class="pointer-events-auto fixed bottom-5 left-1/2 z-10 -translate-x-1/2 text-[12px] text-mist/45 max-lg:hidden">Drag to orbit &middot; Scroll to zoom &middot; <span class="num">1 2 3</span> camera</div>
+
+<!-- phone: tabs that open the rails as sheets -->
+<nav class="fixed inset-x-0 bottom-0 z-20 grid h-[calc(56px+env(safe-area-inset-bottom))] grid-cols-3 bg-[linear-gradient(to_top,rgb(6_9_15/0.95),rgb(6_9_15/0.7))] pb-[env(safe-area-inset-bottom)] lg:hidden">
+  <button class="text-[13px] text-mist/55 aria-pressed:text-bone aria-pressed:underline aria-pressed:underline-offset-[6px]" data-sheet="railL" aria-pressed="false">Vehicle</button>
+  <button class="text-[13px] text-mist/55 aria-pressed:text-bone aria-pressed:underline aria-pressed:underline-offset-[6px]" data-sheet="railR" aria-pressed="false">Command</button>
+  <button class="text-[13px] text-mist/55 aria-pressed:text-bone aria-pressed:underline aria-pressed:underline-offset-[6px]" data-sheet="" aria-pressed="true">Map</button>
+</nav>
 
 <script type="importmap">
-{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+{ "imports": { "three": "/viewer/vendor/three/three.module.js", "three/addons/": "/viewer/vendor/three/addons/" } }
 </script>
-<script type="module">
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-
-// ---------- lat/lon <-> local meters (x east, z south in three.js; we use y up) ----------
-const M_PER_DEG = 111320;
-let origin = [39.0912, -77.1534];
-const toXZ = (lat, lon) => {
-  const cos = Math.cos(origin[0] * Math.PI / 180);
-  return [ (lon - origin[1]) * M_PER_DEG * cos, -(lat - origin[0]) * M_PER_DEG ];   // z = -north
-};
-const toLatLon = (x, z) => {
-  const cos = Math.cos(origin[0] * Math.PI / 180);
-  return [ origin[0] + (-z) / M_PER_DEG, origin[1] + x / (M_PER_DEG * cos) ];
-};
-
-// ---------- scene ----------
-const canvas = document.getElementById('c');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(2, devicePixelRatio));
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0b1b33);
-scene.fog = new THREE.Fog(0x0b1b33, 250, 700);
-const camera = new THREE.PerspectiveCamera(55, 1, 0.5, 2000);
-camera.position.set(0, 60, 90);
-const controls = new OrbitControls(camera, canvas);
-controls.maxPolarAngle = Math.PI / 2 - 0.05;
-controls.target.set(0, 0, -20);
-scene.add(new THREE.HemisphereLight(0xbcd7ff, 0x0b1b33, 0.9));
-const sun = new THREE.DirectionalLight(0xffffff, 1.1); sun.position.set(80, 120, 40); scene.add(sun);
-
-// water
-const water = new THREE.Mesh(new THREE.PlaneGeometry(1400, 1400, 1, 1), new THREE.MeshStandardMaterial({ color: 0x123c5c, roughness: 0.35, metalness: 0.1 }));
-water.rotation.x = -Math.PI / 2; water.name = 'water'; scene.add(water);
-const gridHelper = new THREE.GridHelper(600, 60, 0x1e3f63, 0x16304f); gridHelper.position.y = 0.02; scene.add(gridHelper);
-
-// shore + station
-const shore = new THREE.Mesh(new THREE.BoxGeometry(260, 2, 24), new THREE.MeshStandardMaterial({ color: 0x3b5068 }));
-shore.position.set(0, 0.5, 12); scene.add(shore);
-const station = new THREE.Group();
-station.add(new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.6, 1.6), new THREE.MeshStandardMaterial({ color: 0xf08a24 })));
-const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 6), new THREE.MeshStandardMaterial({ color: 0xffffff })); mast.position.y = 3.8; station.add(mast);
-const ant = new THREE.Mesh(new THREE.SphereGeometry(0.35), new THREE.MeshStandardMaterial({ color: 0x2bc4d6, emissive: 0x2bc4d6, emissiveIntensity: 0.6 })); ant.position.y = 7; station.add(ant);
-station.position.set(0, 1.8, 6); scene.add(station);
-
-// the boat
-const boat = new THREE.Group();
-const hullMat = new THREE.MeshStandardMaterial({ color: 0xe8eef5, roughness: 0.6 });
-for (const sx of [-0.55, 0.55]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.3, 1.25), hullMat); p.position.set(sx, 0.15, 0); boat.add(p); }
-const bridge = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.08, 0.3), hullMat); bridge.position.set(0, 0.34, 0.15); boat.add(bridge);
-const basket = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.3, 0.55), new THREE.MeshStandardMaterial({ color: 0x4fbf8a, transparent: true, opacity: 0.7 })); basket.position.set(0, 0.3, 0.1); boat.add(basket);
-const conveyor = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.06, 0.6), new THREE.MeshStandardMaterial({ color: 0x111111 })); conveyor.position.set(0, 0.2, -0.5); conveyor.rotation.x = 0.6; boat.add(conveyor);
-const island = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.25, 0.25), new THREE.MeshStandardMaterial({ color: 0xf08a24 })); island.position.set(0, 0.5, 0.3); boat.add(island);
-const bmast = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.9), new THREE.MeshStandardMaterial({ color: 0xffffff })); bmast.position.set(0, 1.05, 0.3); boat.add(bmast);
-const nose = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.5, 8), new THREE.MeshStandardMaterial({ color: 0x2bc4d6 })); nose.rotation.x = -Math.PI / 2; nose.position.set(0, 0.35, -0.95); boat.add(nose);
-boat.scale.setScalar(2.2);
-scene.add(boat);
-let boatTarget = { x: 0, z: -15, h: 0 }; boat.position.set(0, 0, -15);
-const headingRing = new THREE.Mesh(new THREE.RingGeometry(2.2, 2.5, 48), new THREE.MeshBasicMaterial({ color: 0x2bc4d6, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
-headingRing.rotation.x = -Math.PI / 2; headingRing.position.y = 0.05; scene.add(headingRing);
-
-// trail points
-const trailGroup = new THREE.Group(); scene.add(trailGroup);
-const dotGeo = new THREE.SphereGeometry(0.45, 10, 8);
-const trailLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xa9bcd0, transparent: true, opacity: 0.5 }));
-scene.add(trailLine);
-const trailPts = [];
-const sigColor = (dbm) => dbm == null ? 0xe05a5a : dbm > -65 ? 0x4fbf8a : dbm > -75 ? 0xf2c94c : dbm > -85 ? 0xf08a24 : 0xe05a5a;
-function addTrail(m) {
-  const [x, z] = toXZ(m.lat, m.lon);
-  const d = new THREE.Mesh(dotGeo, new THREE.MeshStandardMaterial({ color: sigColor(m.signal_dbm), emissive: sigColor(m.signal_dbm), emissiveIntensity: 0.4 }));
-  d.position.set(x, 0.4, z); trailGroup.add(d);
-  trailPts.push(new THREE.Vector3(x, 0.4, z));
-  trailLine.geometry.setFromPoints(trailPts);
-}
-
-// fences + sweep path
-const fenceMat = new THREE.LineDashedMaterial({ color: 0x2bc4d6, dashSize: 2, gapSize: 1.5 });
-let drivenFence = null, sweepFence = null, sweepPath = null;
-function rectLine(c, mat, y = 0.1) {
-  const [x0, z0] = toXZ(c[0][0], c[0][1]); const [x1, z1] = toXZ(c[1][0], c[1][1]);
-  const pts = [[x0,z0],[x1,z0],[x1,z1],[x0,z1],[x0,z0]].map(([x,z]) => new THREE.Vector3(x, y, z));
-  const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat); l.computeLineDistances(); return l;
-}
-function setWorld(w) {
-  origin = w.origin;
-  if (drivenFence) scene.remove(drivenFence);
-  drivenFence = rectLine(w.fence_driven, fenceMat); scene.add(drivenFence);
-  if (sweepFence) scene.remove(sweepFence); if (sweepPath) scene.remove(sweepPath);
-  if (w.sweep_corners) { sweepFence = rectLine(w.sweep_corners, new THREE.LineDashedMaterial({ color: 0xf2c94c, dashSize: 1.5, gapSize: 1 }), 0.12); scene.add(sweepFence); }
-  if (w.sweep_points && w.sweep_points.length) {
-    const pts = w.sweep_points.map(([la, lo]) => { const [x, z] = toXZ(la, lo); return new THREE.Vector3(x, 0.15, z); });
-    sweepPath = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xf2c94c, transparent: true, opacity: 0.7 })); scene.add(sweepPath);
-  }
-  if (w.holder !== undefined) setHolder(w.holder);
-  if (w.events) w.events.forEach(feed);
-  if (w.link_up === false) linkEl.style.display = 'block';
-}
-
-// coverage grid
-let gridMesh = null, gridSize = 3, layer = 'covered';
-const layers = ['covered', 'ph', 'temp_c', 'turb_ntu', 'cond_us'];
-const ranges = { ph: [6.5, 8.5], temp_c: [18, 24], turb_ntu: [5, 30], cond_us: [350, 500] };
-const heat = (v, [lo, hi]) => { const t = Math.max(0, Math.min(1, (v - lo) / (hi - lo))); return new THREE.Color().setHSL((1 - t) * 0.4, 0.8, 0.5); };
-function setGrid(g) {
-  gridSize = g.size_m;
-  if (gridMesh) scene.remove(gridMesh);
-  if (!g.cells.length) return;
-  const geo = new THREE.PlaneGeometry(gridSize * 0.94, gridSize * 0.94);
-  gridMesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.55, side: THREE.DoubleSide }), g.cells.length);
-  const m = new THREE.Matrix4(); const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)); const s = new THREE.Vector3(1, 1, 1);
-  g.cells.forEach((c, i) => {
-    const x = (c.ix + 0.5) * gridSize, z = -(c.iy + 0.5) * gridSize;
-    m.compose(new THREE.Vector3(x, 0.08, z), q, s); gridMesh.setMatrixAt(i, m);
-    const v = c[layer];
-    gridMesh.setColorAt(i, layer === 'covered' || v == null ? new THREE.Color(0x2bc4d6) : heat(v, ranges[layer]));
-  });
-  gridMesh.instanceColor.needsUpdate = true; scene.add(gridMesh);
-  // trash
-  trashGroup.clear();
-  (g.trash || []).forEach(([la, lo]) => { const [x, z] = toXZ(la, lo); const t = new THREE.Mesh(new THREE.OctahedronGeometry(0.8), new THREE.MeshStandardMaterial({ color: 0xf08a24, emissive: 0xf08a24, emissiveIntensity: 0.5 })); t.position.set(x, 1, z); trashGroup.add(t); });
-  if (g.coverage_pct != null) el.cov.textContent = g.coverage_pct.toFixed(0) + ' %';
-}
-const trashGroup = new THREE.Group(); scene.add(trashGroup);
-let lastGrid = null;
-
-// ---------- HUD ----------
-const el = Object.fromEntries(['mode','batt','sig','hdg','dist','trail','cov','temp','ph','turb','cond'].map(id => [id, document.getElementById(id)]));
-const feedEl = document.getElementById('feed'), linkEl = document.getElementById('link');
-const fmt = (v, d = 1, u = '') => v == null ? '—' : v.toFixed(d) + u;
-function feed(m) {
-  const d = document.createElement('div');
-  const t = new Date((m.ts || Date.now() / 1000) * 1000).toLocaleTimeString();
-  d.innerHTML = `<b>${m.kind}</b> ${m.detail || ''} <span style="float:right">${t}</span>`;
-  feedEl.appendChild(d); feedEl.scrollTop = feedEl.scrollHeight;
-  while (feedEl.children.length > 80) feedEl.removeChild(feedEl.firstChild);
-}
-function onTlm(m) {
-  const [x, z] = toXZ(m.lat, m.lon);
-  boatTarget = { x, z, h: m.heading_deg };
-  el.mode.textContent = m.mode + (m.home_phase ? ' · ' + m.home_phase : '') + (m.wp_index != null ? ' · wp ' + m.wp_index : '');
-  el.mode.className = 'big mode-' + m.mode;
-  el.batt.textContent = fmt(m.batt_pct, 0, ' %'); el.sig.textContent = fmt(m.signal_dbm, 0, ' dBm');
-  el.hdg.textContent = fmt(m.heading_deg, 0, '°'); el.dist.textContent = fmt(Math.hypot(x, z), 0, ' m');
-  el.trail.textContent = m.trail_len ?? '—';
-  const w = m.water || {};
-  el.temp.textContent = fmt(w.temp_c, 1, ' °C'); el.ph.textContent = fmt(w.ph, 2); el.turb.textContent = fmt(w.turb_ntu, 1, ' NTU'); el.cond.textContent = fmt(w.cond_us, 0, ' µS');
-}
-
-// ---------- websocket ----------
-let ws, me = null, holder = null;
-const takeBtn = document.getElementById('take');
-function setHolder(h) { holder = h; takeBtn.textContent = h === me ? 'RELEASE CONTROL' : h ? 'SOMEONE ELSE DRIVES' : 'TAKE CONTROL'; takeBtn.classList.toggle('on', h === me); }
-function connect() {
-  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
-  ws.onmessage = (e) => {
-    const m = JSON.parse(e.data);
-    switch (m.t) {
-      case 'world': if (m.you) me = m.you; setWorld(m); break;
-      case 'tlm': onTlm(m); break;
-      case 'trail': addTrail(m); break;
-      case 'evt': feed(m); break;
-      case 'ack': feed({ kind: 'ack ' + m.for, detail: (m.ok ? 'ok ' : 'refused ') + (m.msg || ''), ts: m.ts }); break;
-      case 'grid': lastGrid = m; setGrid(m); break;
-      case 'link': linkEl.style.display = m.up ? 'none' : 'block'; feed({ kind: m.up ? 'link up' : 'LINK LOST', ts: m.ts }); break;
-      case 'control': setHolder(m.holder); break;
-    }
-  };
-  ws.onclose = () => setTimeout(connect, 1000);
-}
-connect();
-const send = (o) => ws && ws.readyState === 1 && ws.send(JSON.stringify(o));
-
-// ---------- controls ----------
-takeBtn.onclick = () => send({ t: holder === me ? 'release' : 'take' });
-document.getElementById('home').onclick = () => send({ t: 'home' });
-document.getElementById('trash').onclick = () => send({ t: 'trash' });
-document.getElementById('layer').onclick = (e) => { layer = layers[(layers.indexOf(layer) + 1) % layers.length]; e.target.textContent = 'LAYER: ' + layer; if (lastGrid) setGrid(lastGrid); };
-let follow = true;
-document.getElementById('cam').onclick = (e) => { follow = !follow; e.target.textContent = 'CAMERA: ' + (follow ? 'follow' : 'free'); };
-
-// sweep: click two corners on the water
-let picking = false, corner1 = null;
-const sweepBtn = document.getElementById('sweep');
-const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
-sweepBtn.onclick = () => { picking = !picking; corner1 = null; sweepBtn.textContent = picking ? 'CLICK CORNER 1' : 'START SWEEP'; sweepBtn.classList.toggle('on', picking); };
-canvas.addEventListener('pointerdown', (e) => { if (picking) { e._x = e.clientX; e._y = e.clientY; } });
-canvas.addEventListener('pointerup', (e) => {
-  if (!picking) return;
-  mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
-  ray.setFromCamera(mouse, camera);
-  const hit = ray.intersectObject(water)[0]; if (!hit) return;
-  const ll = toLatLon(hit.point.x, hit.point.z);
-  if (!corner1) { corner1 = ll; sweepBtn.textContent = 'CLICK CORNER 2'; return; }
-  send({ t: 'sweep', corners: [corner1, ll] });
-  picking = false; corner1 = null; sweepBtn.textContent = 'START SWEEP'; sweepBtn.classList.remove('on');
-});
-
-// keyboard + gamepad -> ctl at 10 Hz while we hold control
-const keys = {}; let conveyorOn = false;
-addEventListener('keydown', (e) => { keys[e.key.toLowerCase()] = true; if (e.key.toLowerCase() === 'c') conveyorOn = !conveyorOn; });
-addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
-setInterval(() => {
-  if (holder !== me) return;
-  let th = (keys.w ? 1 : 0) - (keys.s ? 1 : 0), st = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
-  const gp = navigator.getGamepads && navigator.getGamepads()[0];
-  if (gp) { th = -gp.axes[1] || th; st = gp.axes[2] || gp.axes[0] || st; if (gp.buttons[0]?.pressed) conveyorOn = true; if (gp.buttons[1]?.pressed) conveyorOn = false; }
-  const dz = (v) => Math.abs(v) < 0.08 ? 0 : v;
-  send({ t: 'ctl', throttle: dz(th) * 0.8, steer: dz(st) * 0.6, conveyor: conveyorOn });
-}, 100);
-
-// ---------- render ----------
-function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
-addEventListener('resize', resize); resize();
-const clock = new THREE.Clock();
-function frame() {
-  const dt = Math.min(0.1, clock.getDelta());
-  boat.position.x += (boatTarget.x - boat.position.x) * Math.min(1, dt * 4);
-  boat.position.z += (boatTarget.z - boat.position.z) * Math.min(1, dt * 4);
-  const want = -boatTarget.h * Math.PI / 180; let d = want - boat.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d));
-  boat.rotation.y += d * Math.min(1, dt * 4);
-  boat.position.y = 0.15 + Math.sin(clock.elapsedTime * 1.7) * 0.06;
-  headingRing.position.set(boat.position.x, 0.05, boat.position.z);
-  if (follow) { controls.target.lerp(new THREE.Vector3(boat.position.x, 0, boat.position.z), Math.min(1, dt * 2)); }
-  controls.update();
-  renderer.render(scene, camera);
-  requestAnimationFrame(frame);
-}
-frame();
-</script>
+<script type="module" src="/viewer/js/main.js"></script>
 </body>
 </html>

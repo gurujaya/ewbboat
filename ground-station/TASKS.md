@@ -27,6 +27,7 @@
 - [x] `/api/sweep`: accept corners, build the list, send `wps`, wait for `ack`
 - [x] `grid.py`: 3 m squares, mark covered on each trail point, per-square averages of the four readings; unit test
 - [x] `/api/grid` for the dashboard overlay and heat map; coverage %
+- [x] `world.fence_radius_m` so the viewer/dashboard can draw the boat's circular driving fence
 - [ ] "Sweep what's missed": uncovered squares → new rectangle(s)
 - [ ] Test: full small sweep end to end
 

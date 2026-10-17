@@ -33,7 +33,7 @@ Laptop → station → boat. Sent ~10 times a second while someone holds control
 | `seq` | int | Counts up by 1 each command. The boat ignores a command whose `seq` is lower than the last one it saw (packets can arrive out of order). |
 | `throttle` | float −1..+1 | forward is positive |
 | `steer` | float −1..+1 | positive turns right |
-| `conveyor` | bool | conveyor motor on/off |
+| `conveyor` | bool | conveyor motor on/off. Only obeyed in `DRIVEN`: in `AUTO` the boat runs it, in `COMING_HOME` it turns it off. |
 | `mode` | `"DRIVEN"` / `"AUTO"` / `"COMING_HOME"` | the mode the operator wants. Only a request when `ask` is true; otherwise it just echoes the boat's last reported mode. The boat may refuse (see Modes below). |
 | `ask` | bool, optional | true for a few seconds after a mode button is pressed. The boat ignores `mode` when this is false or missing. |
 
@@ -61,7 +61,9 @@ Rules:
 
 ### 3. Telemetry  (`"t": "tlm"`)
 
-Boat → station, once a second. The station saves every one of these.
+Boat → station, 5 times a second. The station saves every one of these.
+
+`lat`/`lon` are the boat's **filtered** position, not the raw GPS fix: the Pi runs every fix through a small smoothing filter (`boat-pi/nav.py`, `PositionFilter`) and predicts between fixes. The autopilot, the fences and the trail all use this same position. The raw fix is only in the boat's own CSV log (`raw_lat`, `raw_lon`).
 
 ```json
 {
@@ -82,12 +84,18 @@ Boat → station, once a second. The station saves every one of these.
   "conveyor": true,
   "water": { "temp_c": 21.4, "ph": 7.6, "turb_ntu": 12.0, "cond_us": 410 },
   "trail_len": 143,
-  "wp_index": 7
+  "home": [39.09120, -77.15340],
+  "wp_index": 7,
+  "home_phase": null,
+  "target": [39.09125, -77.15336]
 }
 ```
 
 | Field | Meaning |
 | --- | --- |
+| `lat`, `lon` | filtered position (see above), decimal degrees |
+| `heading_deg` | compass heading, 0-360 clockwise from north, as the autopilot uses it (smoothed only if `HEADING_SMOOTH_S` is set on the Pi; it isn't, by default) |
+| `speed_mps` | speed over ground, from the position filter's velocity. `null` without a fix, or until there is at least 1 s of fixes. |
 | `gps_fix`, `sats` | whether the GPS has a fix and how many satellites. With no fix, `lat`/`lon` are the last known. |
 | `batt_v`, `batt_pct` | voltage, averaged over 5 s, and the percentage the boat computed from it |
 | `signal_dbm` | radio signal strength as the boat sees it |
@@ -95,11 +103,14 @@ Boat → station, once a second. The station saves every one of these.
 | `left`, `right` | what the motors are currently being told, −1..+1 |
 | `water.*` | the four readings. `null` for a sensor that isn't connected yet. |
 | `trail_len` | how many trail points the boat has saved this run |
-| `wp_index` | which waypoint it's heading for in `AUTO`, else `null` |
+| `home` | `[lat, lon]` of the launch point: the first trail point, averaged over the first 3 s of fixes while the boat sits at the jetty. Every "come home" ends here. `null` until it's set. |
+| `wp_index` | in `AUTO`: index in the `wps` list of the next waypoint the boat hasn't passed yet (equals the list's length when done), else `null` |
+| `home_phase` | in `COMING_HOME`: `DIRECT` (straight line home: Come home button, low battery), `WAIT` / `BACKUP` / `HOME` (lost link: wait, back along the trail to good signal, trail home), `FENCE` or `DONE` (see `boat-pi/safety.py`), else `null` |
+| `target` | `[lat, lon]` of the point the autopilot is steering at right now (a few meters ahead of the boat along its path), or `null` when it isn't steering itself (`DRIVEN`, or `COMING_HOME` while waiting or done) |
 
 ### 4. Trail point  (`"t": "trail"`)
 
-Boat → station, whenever the boat saves a new trail point (every ~3 m or 5 s). Lets the dashboard draw the trail live and gives the station a copy.
+Boat → station, whenever the boat saves a new trail point (every ~3 m or 5 s). Lets the dashboard draw the trail live and gives the station a copy. `lat`/`lon` are the filtered position, same as `tlm`.
 
 ```json
 { "t": "trail", "ts": 1760476327.42, "i": 143, "lat": 39.09123, "lon": -77.15340, "signal_dbm": -61 }
@@ -132,6 +143,8 @@ Boat → station, when something notable happens. The station logs these and the
 
 `kind` is one of: `link_lost`, `link_back`, `batt_warn`, `batt_low`, `batt_critical`, `fence_exit`, `mode_change`, `wp_reached`, `sweep_done`, `trash_seen`, `arduino_silent`.
 
+`wp_reached` is sent once for each waypoint the boat passes, with `detail` `"<n>/<total>"`. The autopilot follows the line through the waypoints rather than stopping at each, so "passed" means it got level with the point along the path, not that it was within some radius of it. `fence_exit` has `detail` saying which fence (`sweep` or `driving`) and where.
+
 ### Video
 
 Not JSON. The boat Pi runs a video stream (start with RTSP from the Pi camera; switch to WebRTC later if latency is bad). The station re-serves it to the dashboard. Video lives on its own port and never shares a packet with the messages above.
@@ -154,7 +167,7 @@ Example: `M 0.45 0.75 1`
 
 Rule: **if the Arduino receives no valid `M` line for 2 s, it sets both motors to 0 and the conveyor to 0.** This never gets removed.
 
-### Arduino → Pi, once a second
+### Arduino → Pi, 5 times a second
 
 ```
 T <lat> <lon> <heading> <fix> <sats> <batt_v> <temp> <ph> <turb> <cond>\n
@@ -163,6 +176,8 @@ T <lat> <lon> <heading> <fix> <sats> <batt_v> <temp> <ph> <turb> <cond>\n
 Example: `T 39.09123 -77.15340 212.5 1 9 12.10 21.4 7.6 12.0 410`
 
 A missing sensor sends `nan` in its slot. The Pi parses this into the `tlm` message above.
+
+Why 5 a second: the Pi's autopilot steers on the GPS position and compass heading in this line, ten times a second. At once a second it was steering on readings up to a second old and zig-zagged. GPS modules like the u-blox M8N do 5 fixes a second; the water sensors and battery don't need it, but one line for everything keeps it simple. The line is ~70 bytes, so 5 a second is ~3 % of the 115200 baud link.
 
 ### Arduino → Pi, when it happens
 

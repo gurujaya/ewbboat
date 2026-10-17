@@ -51,6 +51,13 @@ Gate: it comes back on its own when we cut the signal.
 - [ ] Pi: lost-signal procedure (stop, wait, back to last good point, trail home)
 - [ ] Pi: low-battery rules (warn, conveyor off + home, motors off)
 - [ ] Pi: `COMING_HOME` mode, go-to-waypoint function (algorithm 1), Kp tuning
+- [x] Pi + Arduino: GPS/compass at 5 Hz, GPS position filter, pure-pursuit path following, trail clean-up (tuned in the sim; pool tuning still to do)
+- [x] Pi: driving fence (circle around the station) in `DRIVEN`
+- [x] Pi: home = the averaged first fixes at the jetty (`tlm.home`); every trip home ends there
+- [x] Pi: the path follower learns the current's push (crabs into a cross-current instead of sitting off its row)
+- [x] Sim: `montecarlo.py`, hundreds of graded fast-time runs across currents, GPS noise and seeds
+- [x] Station: map squares and sweep rows sized to the scoop (0.8 m); "covered" = the belt went over it; every-other-row turn pattern
+- [ ] Mechanical: confirm the scoop width (pontoon gap) and where the belt lip sits; `SCOOP_WIDTH_M` in ground-station/config.py and the funnel in sim/physics.py both depend on it
 - [ ] Pi: fence check in every mode
 - [ ] Station: `evt` feed stored and shown
 - [ ] Dashboard: trail drawn live, Come home button, event feed, LINK LOST state

@@ -1,7 +1,11 @@
 """The boat's brain. One loop at 10 Hz.
 
-    read Arduino state -> run safety checks -> pick motor command by mode -> send M line
-    once a second: send telemetry, maybe drop a trail point, log to CSV
+    read Arduino state -> filter the GPS -> run safety checks -> pick motor command by mode -> send M line
+    5 times a second: send telemetry, maybe drop a trail point, log to CSV
+
+Position: every GPS fix goes through nav.PositionFilter; everything else on the
+boat (autopilot, fences, trail, tlm) uses the filtered position. The raw fix is
+only written to the CSV log, next to the filtered one, so we can compare.
 
 Modes and every transition live in modes.py. Hardware lives in arduino.py and
 comms/boatlink. This file just wires them together.
@@ -17,12 +21,12 @@ import time
 
 import config
 from arduino import Arduino
-from autopilot import WaypointRunner
+from autopilot import PathFollower
 from logger import CsvLogger
 from modes import AUTO, COMING_HOME, DRIVEN, Modes
-from nav import mix
+from nav import PositionFilter, clamp_to_rect, mix, point_inside_circle, smooth_heading
 from radio import make_link, read_wifi_dbm
-from safety import BatteryMonitor, HomePlan, fence_ok
+from safety import BatteryMonitor, HomePlan, driven_fence_ok, fence_ok
 from trail import Trail
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s", datefmt="%H:%M:%S")
@@ -34,7 +38,7 @@ class Boat:
         self.ard = Arduino(config.SERIAL_PORT, config.SERIAL_BAUD)
         self.link = make_link(self.signal_dbm)
         self.modes = Modes()
-        self.trail = Trail(config.TRAIL_EVERY_M, config.TRAIL_EVERY_S)
+        self.trail = Trail(config.TRAIL_EVERY_M, config.TRAIL_EVERY_S, config.HOME_SETTLE_S)
         self.batt = BatteryMonitor(config.BATT_AVG_S)
         self.home = HomePlan()
         self.csv = CsvLogger(config.LOG_DIR)
@@ -42,7 +46,7 @@ class Boat:
 
         self.last_cmd: dict | None = None
         self.last_cmd_at = 0.0
-        self.sweep: WaypointRunner | None = None
+        self.sweep: PathFollower | None = None
         self.pending_wps: list[tuple[float, float]] | None = None
         self.fence: list[tuple[float, float]] | None = None
         self.left = self.right = 0.0
@@ -50,6 +54,10 @@ class Boat:
         self._running = True
         self._last_mode_ask: tuple[str, float] = ("", 0.0)
         self._held_events: list[dict] = []
+        self.heading: float | None = None     # compass heading, smoothed (HEADING_SMOOTH_S)
+        self._heading_t: float = 0.0
+        self.filter = PositionFilter(config.FILTER_ALPHA, config.FILTER_BETA, config.FILTER_GAP_RESET_S, config.FILTER_JUMP_M)
+        self._fence_target: tuple[float, float] | None = None   # where to go after crossing a fence
 
         self.link.on("cmd", self.on_cmd)
         self.link.on("wps", self.on_wps)
@@ -62,8 +70,11 @@ class Boat:
             return self.ard.state.signal_dbm
         return read_wifi_dbm()
 
-    def pos(self) -> tuple[float, float]:
-        return self.ard.state.lat, self.ard.state.lon
+    def pos(self, now: float | None = None) -> tuple[float, float]:
+        """Filtered position (predicted to `now`). Falls back to the last raw fix
+        before the filter has one (startup, or just after the fix came back)."""
+        p = self.filter.position(time.time() if now is None else now)
+        return p if p is not None else (self.ard.state.lat, self.ard.state.lon)
 
     def event(self, kind: str, detail: str = "") -> None:
         log.info("event %s %s", kind, detail)
@@ -137,11 +148,18 @@ class Boat:
         if ch.mode != before:
             self.event("mode_change", f"{before} -> {ch.mode} ({reason})")
         if ch.mode == AUTO:
-            self.sweep = WaypointRunner(self.pending_wps or [], "sweep")
+            # start the path where the boat is, so the first leg is a straight run to the first waypoint
+            self.sweep = PathFollower(self.pending_wps or [], start=self.pos(), label="sweep")
         elif ch.mode == COMING_HOME and reason in ("come_home", "batt_low"):
-            self.home.start_home(self.trail, reason)
-        elif ch.mode == COMING_HOME and reason == "fence_exit":
-            self.home.start_fence(self.pos(), self.fence)
+            self.home.start_home(self.trail, reason, self.pos())     # straight home, the fastest way
+        elif ch.mode == COMING_HOME and reason == "fence_exit" and self._fence_target is not None:
+            self.home.start_fence(self.pos(), self._fence_target)
+
+    def _fence_exit(self, pos: tuple[float, float], inside: tuple[float, float], which: str) -> None:
+        """Crossed a fence: stop what we're doing and drive to `inside`."""
+        self.event("fence_exit", f"{which} fence at {pos[0]:.5f},{pos[1]:.5f}")
+        self._fence_target = inside
+        self._request(COMING_HOME, "fence_exit")
 
     # ---- the loop ------------------------------------------------------------
     def run(self) -> None:
@@ -154,14 +172,22 @@ class Boat:
             t0 = time.time()
             with self.lock:
                 self.tick(t0)
-                if t0 >= next_tlm:
+                # half a loop of slack: tlm every 2nd loop is 5 Hz; without it, a loop that
+                # wakes a millisecond early would push tlm to every 3rd loop (3.3 Hz)
+                if t0 >= next_tlm - period / 2:
                     self.telemetry(t0)
                     next_tlm = t0 + 1.0 / config.TELEMETRY_HZ
             time.sleep(max(0.0, period - (time.time() - t0)))
 
     def tick(self, now: float) -> None:
         st = self.ard.state
-        pos = self.pos()
+        for t, lat, lon in self.ard.take_fixes():
+            self.filter.update(t, (lat, lon))
+        if not st.gps_fix and self.filter.ready:
+            self.filter.reset()             # no fix: don't keep coasting on an old velocity
+        pos = self.pos(now)
+        self.heading = smooth_heading(self.heading, st.heading_deg, now - self._heading_t, config.HEADING_SMOOTH_S)
+        self._heading_t = now
         self.batt.update(st.batt_v, now)
 
         # --- safety checks, every tick, every mode ---
@@ -177,11 +203,16 @@ class Boat:
             self.left = self.right = 0.0
             self.ard.send_motors(0.0, 0.0, False)
             return
-        # the fence is the sweep rectangle; it only applies once the boat is inside it (first waypoint reached)
-        fence_active = self.modes.mode == AUTO and self.sweep is not None and self.sweep.i >= 1
-        if st.gps_fix and fence_active and not fence_ok(pos, self.fence):
-            self.event("fence_exit", f"at {pos[0]:.5f},{pos[1]:.5f}")
-            self._request(COMING_HOME, "fence_exit")
+        # Fences (ARCHITECTURE.md, Fence): cross it -> stop -> drive to the nearest point inside.
+        # AUTO: the sweep rectangle, only once the boat is inside it (first waypoint passed).
+        # DRIVEN: a circle of DRIVEN_FENCE_M around the station.
+        if st.gps_fix and self.filter.ready:
+            sweep_fence_active = self.modes.mode == AUTO and self.sweep is not None and self.sweep.next_index >= 1
+            if sweep_fence_active and not fence_ok(pos, self.fence):
+                self._fence_exit(pos, clamp_to_rect(pos, self.fence), "sweep")
+            elif self.modes.mode == DRIVEN and not driven_fence_ok(pos):
+                inside = point_inside_circle(pos, config.ORIGIN, config.DRIVEN_FENCE_M, config.FENCE_RETURN_INSIDE_M)
+                self._fence_exit(pos, inside, "driving")
         for e in st.events:
             self.event("arduino_" + e.lower())
         st.events.clear()
@@ -195,23 +226,30 @@ class Boat:
             else:
                 self.left = self.right = 0.0
         elif mode == AUTO:
+            # A sweep is for collecting: the belt runs the whole time, whatever the operator
+            # last pressed. (The 20 % battery rule turns it off and leaves AUTO anyway.)
+            self.conveyor = True
             if self.sweep and not self.sweep.done:
-                self.left, self.right, reached = self.sweep.step(pos, st.heading_deg)
-                if reached:
-                    self.event("wp_reached", f"{self.sweep.i}/{len(self.sweep.points)}")
+                self.left, self.right, passed = self.sweep.step(pos, self.heading, now)
+                # one event per waypoint passed (pure pursuit can pass two in one step at a tight corner)
+                n = self.sweep.next_index
+                for k in range(n - passed + 1, n + 1):
+                    self.event("wp_reached", f"{k}/{len(self.sweep.points)}")
             else:
                 self.event("sweep_done")
                 self.pending_wps = None
                 self._request(COMING_HOME, "come_home")
         elif mode == COMING_HOME:
-            self.left, self.right, ev = self.home.step(pos, st.heading_deg, self.trail, self.link.up, now)
+            self.conveyor = False           # nothing to collect on the way home; save the battery
+            self.left, self.right, ev = self.home.step(pos, self.heading, self.trail, self.link.up, now)
             if ev:
                 self.event(ev)
                 if ev == "fence_back_inside":
-                    if self.sweep and not self.sweep.done and self.pending_wps and self.link.up:
+                    # resume the sweep only if it was the sweep that crossed the fence
+                    if self.modes.previous == AUTO and self.sweep and not self.sweep.done and self.pending_wps and self.link.up:
                         ch = self.modes.request(DRIVEN, "take_control", link_up=True, batt_pct=self.batt.pct)
                         ch = self.modes.request(AUTO, "start_sweep", link_up=True, batt_pct=self.batt.pct, have_waypoints=True, gps_fix=st.gps_fix)
-                        self.event("mode_change", f"back inside, resuming sweep at wp {self.sweep.i}")
+                        self.event("mode_change", f"back inside, resuming sweep at wp {self.sweep.next_index}")
                     elif self.link.up:
                         self._request(DRIVEN, "take_control")
 
@@ -219,23 +257,37 @@ class Boat:
 
     def telemetry(self, now: float) -> None:
         st = self.ard.state
-        pos = self.pos()
+        pos = self.pos(now)
         sig = self.signal_dbm()
-        if st.gps_fix:
+        speed = self.filter.speed_mps()
+        if st.gps_fix and self.filter.ready:
             p = self.trail.maybe_add(pos, sig, now)
             if p:
-                self.link.send("trail", {"i": p.i, "lat": p.lat, "lon": p.lon, "signal_dbm": p.signal_dbm})
+                self.link.send("trail", {"i": p.i, "lat": round(p.lat, 7), "lon": round(p.lon, 7), "signal_dbm": p.signal_dbm})
+        mode = self.modes.mode
+        target = None
+        if mode == AUTO and self.sweep:
+            target = self.sweep.target
+        elif mode == COMING_HOME:
+            target = self.home.target
         tlm = {
-            "lat": st.lat, "lon": st.lon, "heading_deg": st.heading_deg, "speed_mps": None,
+            "lat": round(pos[0], 7), "lon": round(pos[1], 7), "heading_deg": None if self.heading is None else round(self.heading, 1),
+            "speed_mps": None if speed is None else round(speed, 2),
             "gps_fix": st.gps_fix, "sats": st.sats,
             "batt_v": None if st.batt_v != st.batt_v else round(st.batt_v, 2), "batt_pct": round(self.batt.pct),
             "signal_dbm": sig, "mode": self.modes.mode, "left": round(self.left, 2), "right": round(self.right, 2),
             "conveyor": self.conveyor, "water": st.water, "trail_len": len(self.trail.points),
-            "wp_index": (self.sweep.i if self.modes.mode == AUTO and self.sweep else None),
-            "home_phase": self.home.phase if self.modes.mode == COMING_HOME else None,
+            "wp_index": (self.sweep.next_index if mode == AUTO and self.sweep else None),
+            "home_phase": self.home.phase if mode == COMING_HOME else None,
+            "home": None if self.trail.home is None else [round(self.trail.home[0], 7), round(self.trail.home[1], 7)],
+            "target": None if target is None else [round(target[0], 7), round(target[1], 7)],
         }
         self.link.send("tlm", tlm)
-        self.csv.write({"ts": now, **tlm})
+        # the SD card also gets the raw GPS fix (not sent over the radio)
+        self.csv.write({
+            "ts": now, **tlm, "raw_lat": st.lat, "raw_lon": st.lon,
+            "target_lat": target[0] if target else None, "target_lon": target[1] if target else None,
+        })
 
     def stop(self) -> None:
         self._running = False

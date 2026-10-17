@@ -1,0 +1,18 @@
+# Render blueprint for the public demo (https://render.com/docs/blueprint-spec).
+# On render.com: New -> Blueprint -> pick this repo -> it reads this file and creates the service.
+# Free instance: sleeps after 15 min without visitors, wakes on the next one (~30-60 s).
+# This is a demo link only; the real ground station runs on a Pi on the shore.
+services:
+  - type: web
+    name: ewbboat
+    runtime: docker
+    plan: free
+    region: ohio
+    branch: demo
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /viewer
+    autoDeploy: true            # every push to the branch redeploys
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      # PORT is set by Render itself; sim/run.py reads it.

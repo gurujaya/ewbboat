@@ -1,8 +1,9 @@
 """Serial link to the Arduino. The only file on the Pi that touches the hardware
 that moves the boat. Line protocol is in docs/MESSAGES.md, "USB serial".
 
-In the simulator the "Arduino" is sim/fake_arduino.py on the other end of a
-pty. Same lines, same code here.
+In the simulator the other end of the pty is the real firmware logic
+(boat-arduino/boat/src) compiled for the laptop, driven by sim/fake_arduino.py.
+Same lines, same code here.
 """
 
 from __future__ import annotations
@@ -30,6 +31,10 @@ class ArduinoState:
     signal_dbm: float | None = None      # sim only: comes from an "S" line
     last_t_line: float = 0.0
     events: list[str] = field(default_factory=list)
+    # every GPS fix since main.py last looked: (time received, lat, lon). T lines
+    # come 5 times a second and the main loop runs 10, so normally there's 0 or 1
+    # here, but a busy moment can deliver two at once and the filter wants both.
+    fixes: list[tuple[float, float, float]] = field(default_factory=list)
 
 
 def _f(s: str) -> float | None:
@@ -69,6 +74,12 @@ class Arduino:
         except serial.SerialException as e:
             log.warning("serial write failed: %s", e)
 
+    def take_fixes(self) -> list[tuple[float, float, float]]:
+        """The GPS fixes received since the last call, oldest first."""
+        with self.lock:
+            fixes, self.state.fixes = self.state.fixes, []
+        return fixes
+
     def _read_loop(self) -> None:
         while self._running:
             try:
@@ -100,6 +111,9 @@ class Arduino:
             st.batt_v = v if v is not None else float("nan")
             st.water = {"temp_c": _f(parts[7]), "ph": _f(parts[8]), "turb_ntu": _f(parts[9]), "cond_us": _f(parts[10])}
             st.last_t_line = time.time()
+            if st.gps_fix and lat is not None and lon is not None:
+                st.fixes.append((st.last_t_line, lat, lon))
+                del st.fixes[:-20]      # nobody reading (tests, startup)? don't grow forever
         elif parts[0] == "E" and len(parts) >= 2:
             st.events.append(parts[1])
         elif parts[0] == "S" and len(parts) == 2:

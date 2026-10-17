@@ -28,8 +28,8 @@ boat-pi/
   telemetry.py        build tlm from the latest Arduino data + radio + mode
   trail.py            save points, find last good-signal point, walk backwards
   modes.py            the state machine; the only place mode changes happen
-  nav.py              bearing, distance, wrap, go_to_waypoint() (algorithm 1)
-  autopilot.py        run a waypoint list, wp_reached / sweep_done events
+  nav.py              bearing, distance, wrap, GPS filter, pure-pursuit math, trail simplify, fences
+  autopilot.py        PathFollower: follow a list of points with pure pursuit (algorithm 1)
   safety.py           lost-signal, battery, fence checks → asks modes.py to switch
   camera.py           start/stop the video stream
   logger.py           CSV on the SD card

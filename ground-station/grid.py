@@ -25,6 +25,20 @@ class Grid:
     def mark(self, lat: float, lon: float) -> None:
         self.covered.add(self.cell(lat, lon))
 
+    def mark_swath(self, lat: float, lon: float, heading_deg: float, width_m: float) -> None:
+        """The belt passed here: mark every square under a strip width_m wide across the
+        boat's heading. Called for each telemetry fix while the conveyor runs (5 a second,
+        ~0.2 m apart), which paints a continuous strip."""
+        h = math.radians(heading_deg)
+        # across the heading: east component cos(h), north -sin(h)
+        ax, ay = math.cos(h), -math.sin(h)
+        n = max(2, int(width_m / (self.size * 0.5)) + 1)
+        for i in range(n):
+            d = -width_m / 2 + width_m * i / (n - 1)
+            dlat = d * ay / M_PER_DEG_LAT
+            dlon = d * ax / (M_PER_DEG_LAT * self.cos)
+            self.covered.add(self.cell(lat + dlat, lon + dlon))
+
     def reading(self, lat: float, lon: float, water: dict | None) -> None:
         if not water:
             return

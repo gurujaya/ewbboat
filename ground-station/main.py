@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 import config
 from db import DB
 from grid import Grid
-from sweep import plan
+from sweep import corners_inside_circle, plan
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger("station")
@@ -77,11 +77,16 @@ class Station:
             self.last_tlm = m
             if m.get("gps_fix"):
                 self.grid.reading(m["lat"], m["lon"], m.get("water"))
-        elif m["t"] == "trail":
-            self.grid.mark(m["lat"], m["lon"])
+                # "covered" = the belt went over it: the strip under the boat while the conveyor runs
+                if m.get("conveyor") and m.get("heading_deg") is not None:
+                    self.grid.mark_swath(m["lat"], m["lon"], m["heading_deg"], config.SCOOP_WIDTH_M)
         elif m["t"] == "evt":
             self.events.append(m)
             self.events = self.events[-200:]
+        elif m["t"] == "ack" and m.get("for") == "mode":
+            # the boat answered the mode request (yes or no); stop repeating it,
+            # otherwise one button press earns three identical refusals
+            self.want_mode = None
         self.push(m)
 
     def push(self, m: dict) -> None:
@@ -102,12 +107,15 @@ class Station:
                 self.holder = None
 
     # ---- to the boat --------------------------------------------------------------
-    def world_msg(self) -> dict:
+    def world_msg(self, with_history: bool = False) -> dict:
+        # event history only goes to a browser that just connected; re-sending it on every
+        # world update made each open page show every old event twice
         return {
             "t": "world", "ts": time.time(), "origin": config.ORIGIN, "grid_m": config.GRID_M,
             "fence_driven": driven_fence(config.ORIGIN, config.DRIVEN_FENCE_M),
+            "fence_radius_m": config.DRIVEN_FENCE_M,   # the boat enforces a circle this big around ORIGIN
             "sweep_corners": self.sweep_corners, "sweep_points": self.sweep_points,
-            "holder": self.holder, "events": self.events[-50:], "link_up": self.link.up,
+            "holder": self.holder, "events": self.events[-50:] if with_history else [], "link_up": self.link.up,
         }
 
     def request_mode(self, mode: str) -> None:
@@ -146,7 +154,10 @@ class Station:
     async def handle(self, cid: str, m: dict) -> None:
         t = m.get("t")
         if t == "take":
+            # Take control means "a person steers" (ARCHITECTURE.md, Modes), so it also asks for DRIVEN.
+            # The boat still decides; from AUTO or COMING_HOME this is how the operator gets the wheel back.
             self.holder = cid
+            self.request_mode("DRIVEN")
             await self.broadcast({"t": "control", "holder": cid, "ts": time.time()})
         elif t == "release" and self.holder == cid:
             self.holder = None
@@ -160,7 +171,16 @@ class Station:
             self.request_mode("COMING_HOME")
         elif t == "sweep":
             corners = [[float(p[0]), float(p[1])] for p in m["corners"]]
-            pts = plan([tuple(c) for c in corners], config.ROW_SPACING_M)
+            # the station says no before the boat ever hears about it: a rectangle outside the
+            # driving fence would take the boat out of radio range on purpose
+            if not corners_inside_circle([tuple(c) for c in corners], config.ORIGIN, config.DRIVEN_FENCE_M):
+                await self.clients[cid].send_text(json.dumps({"t": "ack", "for": "sweep", "ok": False, "ts": time.time(),
+                                                              "msg": f"the rectangle reaches outside the {config.DRIVEN_FENCE_M:.0f} m fence; draw it closer to the station"}))
+                return
+            pts = plan([tuple(c) for c in corners], config.ROW_SPACING_M, turn_rows=config.SWEEP_TURN_ROWS)
+            if len(pts) < 2:
+                await self.clients[cid].send_text(json.dumps({"t": "ack", "for": "sweep", "ok": False, "ts": time.time(), "msg": "the rectangle is too small for a row"}))
+                return
             sid = f"sweep-{uuid.uuid4().hex[:6]}"
             self.sweep_corners, self.sweep_points = corners, pts
             self.db.save_sweep(sid, corners, pts)
@@ -178,12 +198,22 @@ station = Station()
 app = FastAPI()
 
 
+@app.middleware("http")
+async def no_stale_pages(request, call_next):
+    # the page and its scripts change while we develop; make browsers check every time
+    # instead of quietly running yesterday's copy of the JS
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     await ws.accept()
     cid = uuid.uuid4().hex[:8]
     station.clients[cid] = ws
-    await ws.send_text(json.dumps({**station.world_msg(), "you": cid}))
+    await ws.send_text(json.dumps({**station.world_msg(with_history=True), "you": cid}))
     if station.last_tlm:
         await ws.send_text(json.dumps(station.last_tlm))
     try:
@@ -220,6 +250,25 @@ def events():
 @app.get("/api/grid")
 def grid():
     return station.grid.snapshot()
+
+
+# SIM ONLY. The simulator's fake Arduino serves a "ground truth" feed (where the litter really is,
+# what the belt really scooped) on its own port. On a laptop the viewer reads it directly; on a
+# public demo host only this port is reachable, so the station passes it through. sim/run.py sets
+# SIM_TRUTH_URL; on the real station it's unset and this route says so with a 404.
+SIM_TRUTH_URL = os.environ.get("SIM_TRUTH_URL", "")
+
+
+@app.get("/api/sim/truth")
+def sim_truth():
+    if not SIM_TRUTH_URL:
+        return Response("not a simulation", status_code=404)
+    import urllib.request
+    try:
+        with urllib.request.urlopen(SIM_TRUTH_URL, timeout=0.5) as r:
+            return Response(r.read(), media_type="application/json", headers={"Cache-Control": "no-store"})
+    except Exception:
+        return Response("truth feed unavailable", status_code=503)
 
 
 @app.get("/viewer")
