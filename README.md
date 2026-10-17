@@ -47,6 +47,12 @@ Who's who and what each person does: [docs/TEAM.md](docs/TEAM.md)
 
 Every job folder has a `README.md` (what it is and how it fits) and a `TASKS.md` (the checklist for that job). Start there.
 
+## Try it in a browser, nothing to install
+
+**https://gurujaya.github.io/ewbboat/viewer/** runs the whole simulator inside the page (the real
+boat-pi and ground-station code under Pyodide). Drive, sweep, come home, lose the link. Each
+visitor gets their own boat. See `sim/DEPLOY.md` for how it's hosted.
+
 ## Run it with no hardware
 
 ```bash
