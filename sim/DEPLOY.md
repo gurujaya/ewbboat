@@ -14,14 +14,14 @@ local sockets, with a **WebSocket** to every browser. That rules out the static/
 | --- | --- | --- |
 | Vercel, Netlify, GitHub Pages, Cloudflare Pages | **No** | They serve static files and short functions. No long-running process, no WebSocket server. (They could host a *recorded replay* of the viewer one day; not the live sim.) |
 | Fly.io | Yes | Already set up here (`fly.toml`, app `ewbboat`). Not free for new accounts since 2024; a machine that sleeps when idle costs about $0–2 a month. |
-| Hugging Face Spaces (Docker) | **Yes, free** | Free CPU, Docker, WebSockets. Sleeps after 48 h without visitors, wakes on the next visit. No card. |
+| Hugging Face Spaces (Docker) | Yes, **$9/month** | Docker Spaces need a PRO subscription now (checked 2026-10-17: the free tier only hosts static pages). 2 vCPU, WebSockets, sleeps after 48 h idle. |
 | Render (free web service) | **Yes, free** | Docker, WebSockets, 512 MB. Sleeps after 15 min idle; the first visitor waits ~30–60 s. No card. |
 | Koyeb (free instance) | Yes, free | Docker, WebSockets, one small instance, scales to zero. |
 | Google Cloud Run | Yes, free tier | WebSockets, scales to zero; needs a card on the account. |
 | Oracle Cloud "always free" VM | Yes, free | A real server; you install Docker and a reverse proxy yourself. Most work. |
 
-**Recommendation.** Hugging Face Spaces for a free link that stays up, or Fly if the ~$1/month is
-fine (it's the fastest to update: one command). Render is the free fallback.
+**Recommendation.** Render for a free link (no card; small CPU, sleeps when idle). Fly if ~$1–2/month
+is fine (fastest to update, one command). Hugging Face only if someone already has PRO.
 
 The container reads the web port from `$PORT` (every host above sets it), serves the viewer at
 `/viewer`, and passes the simulator's trash "ground truth" feed through on the same origin
@@ -59,9 +59,9 @@ fly deploy -a ewbboat --image $TAG
 - `.github/workflows/fly-deploy.yml` redeploys on every push to `main` if the repo has a
   `FLY_API_TOKEN` secret (`fly tokens create deploy` → GitHub → Settings → Secrets).
 
-## Option B: Hugging Face Spaces (free)
+## Option B: Hugging Face Spaces (needs PRO, $9/month)
 
-Free CPU (2 vCPU, plenty for the sim), Docker, WebSockets, no card. Sleeps after 48 h with no
+Docker Spaces are not on the free tier any more (`402 Payment Required` on create, 2026-10-17). With PRO: 2 vCPU, Docker, WebSockets. Sleeps after 48 h with no
 visitors and wakes on the next one. The Space builds the repo's `Dockerfile`; the YAML block at
 the top of the repo's `README.md` (`sdk: docker`, `app_port: 8080`) is what tells it how.
 
