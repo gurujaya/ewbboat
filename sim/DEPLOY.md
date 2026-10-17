@@ -61,22 +61,23 @@ fly deploy -a ewbboat --image $TAG
 
 ## Option B: Hugging Face Spaces (free)
 
-1. Make a free account at https://huggingface.co, then **New Space** → name it (e.g. `ewb-boat`),
-   SDK **Docker**, hardware **CPU basic (free)**, visibility Public.
-2. Spaces serve on port **7860**. Add this line to the Space's `README.md` front matter:
-   ```yaml
-   app_port: 7860
-   ```
-   (The container reads `$PORT`; Spaces don't set it, so also add `ENV PORT=7860` to the Dockerfile
-   in the Space, or keep the repo's Dockerfile and set the port in the Space settings → Variables:
-   `PORT=7860`.)
-3. Push this repo to the Space (it's a git remote):
+Free CPU (2 vCPU, plenty for the sim), Docker, WebSockets, no card. Sleeps after 48 h with no
+visitors and wakes on the next one. The Space builds the repo's `Dockerfile`; the YAML block at
+the top of the repo's `README.md` (`sdk: docker`, `app_port: 8080`) is what tells it how.
+
+1. Free account at https://huggingface.co. Then on your laptop:
    ```bash
-   git remote add space https://huggingface.co/spaces/<you>/ewb-boat
-   git push space main
+   pip install -U huggingface_hub
+   hf auth login --add-to-git-credential      # opens the browser; the token stays on your machine
    ```
-   The Space builds the Dockerfile and starts it. Open `https://<you>-ewb-boat.hf.space/viewer`.
-4. It sleeps after 48 h with no visitors and wakes on the next one (about a minute).
+2. Create the Space and push the `demo` branch to it (Spaces build from their `main`):
+   ```bash
+   hf repos create ewbboat --repo-type space --space_sdk docker
+   git push https://huggingface.co/spaces/<your-hf-name>/ewbboat demo:main
+   ```
+3. Open `https://huggingface.co/spaces/<your-hf-name>/ewbboat`. The first build takes ~5 minutes.
+   The viewer is at `https://<your-hf-name>-ewbboat.hf.space/viewer` (the Space page embeds it).
+4. To update: push the branch again. To reset the boat: Settings → Factory reboot.
 
 ## Option C: Render (free)
 

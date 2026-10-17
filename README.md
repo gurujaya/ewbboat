@@ -1,3 +1,14 @@
+---
+title: EWB Trash Boat Simulator
+emoji: 🚤
+colorFrom: blue
+colorTo: gray
+sdk: docker
+app_port: 8080
+pinned: false
+short_description: Drive, sweep and bring home a trash-collecting boat (sim)
+---
+
 # Boat software
 
 Code and docs for the Software, Communications and Data team on the EWB-MC trash-collecting boat (Fall 2026).
