@@ -4,7 +4,24 @@ So anyone on the team (or a judge) can open a URL and watch or drive the boat. T
 link only: the real ground station runs on a Pi on the shore and serves the same page over its
 own Wi-Fi.
 
-## What the host has to run
+## The free way: the simulator inside the browser (GitHub Pages, Vercel, any static host)
+
+The page can run the whole simulator itself, with no server: the real `Boat` class from
+`boat-pi/main.py` and the real `Station` class from `ground-station/main.py` run inside the page
+under Pyodide (Python compiled to WebAssembly), with in-memory stand-ins for the radio and the
+Arduino (`sim/browser/core.py`). Each visitor gets their own boat; nothing sleeps; it costs nothing.
+What doesn't run there: the C++ firmware and the UDP radio code. The real simulator (`sim/run.py`)
+runs both, and that's what the headless test checks.
+
+- **GitHub Pages** (already set up): every push to `demo` or `main` runs `.github/workflows/pages.yml`,
+  which builds the static site (`python sim/browser/build_site.py site`) and publishes it at
+  **https://gurujaya.github.io/ewbboat/** . No account beyond GitHub, no card, no sleeping.
+- **Vercel / Netlify / Cloudflare Pages**: run `python sim/browser/build_site.py site` and deploy the
+  `site` folder as a static site (Vercel: `vercel site --prod`). Same result.
+- The page decides by itself: if a ground station answers at `../api/grid` it uses the WebSocket;
+  otherwise it starts the in-browser simulator. `?local=1` forces the in-browser one.
+
+## What the host has to run (the full simulator, with the firmware and the radio code)
 
 The sim is **four long-running processes in one container** (the fake Arduino, the firmware
 compiled for the machine, the real boat-pi, the real ground station), talking to each other over
@@ -12,7 +29,7 @@ local sockets, with a **WebSocket** to every browser. That rules out the static/
 
 | Host | Can it run this? | Why |
 | --- | --- | --- |
-| Vercel, Netlify, GitHub Pages, Cloudflare Pages | **No** | They serve static files and short functions. No long-running process, no WebSocket server. (They could host a *recorded replay* of the viewer one day; not the live sim.) |
+| Vercel, Netlify, GitHub Pages, Cloudflare Pages | Not the full sim | Static files only: no long-running process, no WebSocket server. They host the in-browser version above, which is what the public link uses. |
 | Fly.io | Yes | Already set up here (`fly.toml`, app `ewbboat`). Not free for new accounts since 2024; a machine that sleeps when idle costs about $0–2 a month. |
 | Hugging Face Spaces (Docker) | Yes, **$9/month** | Docker Spaces need a PRO subscription now (checked 2026-10-17: the free tier only hosts static pages). 2 vCPU, WebSockets, sleeps after 48 h idle. |
 | Render (free web service) | **Yes, free** | Docker, WebSockets, 512 MB. Sleeps after 15 min idle; the first visitor waits ~30–60 s. No card. |

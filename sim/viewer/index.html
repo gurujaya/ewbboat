@@ -6,12 +6,12 @@
 <title>Boat Station View</title>
 <meta name="color-scheme" content="dark">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f3efe7' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M3 15c2 1.6 4 1.6 6 0s4-1.6 6 0 4 1.6 6 0M3 19c2 1.6 4 1.6 6 0s4-1.6 6 0 4 1.6 6 0M7 12V8.5L12 4l5 4.5V12'/%3E%3C/svg%3E">
-<!-- Everything is vendored under /viewer/vendor so this page works at the lake with no internet.
+<!-- Everything is vendored under vendor/ so this page works at the lake with no internet.
      Versions and licenses: vendor/README.md -->
-<script src="/viewer/vendor/tailwind.js"></script>
-<script src="/viewer/vendor/motion.js"></script>
+<script src="vendor/tailwind.js"></script>
+<script src="vendor/motion.js"></script>
 <style>
-  @font-face { font-family: "Instrument Sans Var"; src: url(/viewer/vendor/fonts/instrument-sans.woff2) format("woff2"); font-weight: 400 700; font-display: swap; }
+  @font-face { font-family: "Instrument Sans Var"; src: url(vendor/fonts/instrument-sans.woff2) format("woff2"); font-weight: 400 700; font-display: swap; }
 </style>
 <style type="text/tailwindcss">
   @theme {
@@ -210,7 +210,7 @@
     <div class="mt-1 flex items-center gap-5">
       <button id="btnRelease" class="btn" disabled title="Hand control back">Release</button>
       <button id="btnTrash" class="btn" title="Pin trash at the boat's position">Mark trash</button>
-      <a id="btnExport" class="btn" href="/api/export.csv" download title="Every telemetry row as a spreadsheet">Export CSV</a>
+      <a id="btnExport" class="btn" href="../api/export.csv" download title="Every telemetry row as a spreadsheet">Export CSV</a>
     </div>
   </section>
 
@@ -287,8 +287,8 @@
 </nav>
 
 <script type="importmap">
-{ "imports": { "three": "/viewer/vendor/three/three.module.js", "three/addons/": "/viewer/vendor/three/addons/" } }
+{ "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }
 </script>
-<script type="module" src="/viewer/js/main.js"></script>
+<script type="module" src="js/main.js"></script>
 </body>
 </html>

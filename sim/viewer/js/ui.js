@@ -168,6 +168,8 @@ export function setTelemetry(m, { distM, fencePct }) {
   setGps(m.gps_fix, m.sats ?? 0);
 }
 
+export function setLastSeenText(text) { $('lastSeen').textContent = text; $('lastSeen').className = 'num text-[12px] text-mist/60'; }
+
 export function setLastSeen(secondsAgo, hz) {
   const el = $('lastSeen');
   if (secondsAgo == null) { el.textContent = 'no data'; return; }

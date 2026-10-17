@@ -9,11 +9,12 @@ import { toXZ } from './geo.js';
 const POLL_MS = 250;
 
 export class TruthFeed {
-  constructor(onData, onLost) {
+  constructor(onData, onLost, fetcher = null) {
+    this.fetcher = fetcher;               // the in-browser sim answers directly, no HTTP
     const port = new URLSearchParams(location.search).get('truth') || '8099';
     // the station passes the feed through on its own origin (that's all a public host exposes);
     // on a laptop the fake Arduino's own port works too
-    this.urls = ['/api/sim/truth', `${location.protocol}//${location.hostname}:${port}/truth`];
+    this.urls = [new URL('../api/sim/truth', location.href).href, `${location.protocol}//${location.hostname}:${port}/truth`];
     this.which = 0;
     this.onData = onData;
     this.onLost = onLost;
@@ -23,9 +24,13 @@ export class TruthFeed {
   }
   async poll() {
     try {
-      const r = await fetch(this.urls[this.which], { cache: 'no-store' });
-      if (!r.ok) throw new Error(r.status);
-      const d = await r.json();
+      let d;
+      if (this.fetcher) d = await this.fetcher();
+      else {
+        const r = await fetch(this.urls[this.which], { cache: 'no-store' });
+        if (!r.ok) throw new Error(r.status);
+        d = await r.json();
+      }
       this.fails = 0;
       if (!this.live) { this.live = true; }
       this.onData(d);

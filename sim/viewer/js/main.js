@@ -64,10 +64,14 @@ const pursuit = new PursuitTarget(scene);
 const home = new HomeMark(scene);
 // SIM ONLY: floating trash from the simulator's ground-truth feed (silent when there is none)
 const flotsam = new Flotsam(scene, (x, z) => ripple(x, z, 0xffffff, 1.6, 0.9, 0.5));
-const truth = new TruthFeed(
-  (d) => { flotsam.set(d, now(), est.has ? { x: est.x, z: est.z } : null); ui.setTrash(flotsam.collected, flotsam.total, true); },
-  () => { flotsam.clear(); ui.setTrash(0, 0, false); },
-);
+let truth = null;
+function startTruth() {
+  truth = new TruthFeed(
+    (d) => { flotsam.set(d, now(), est.has ? { x: est.x, z: est.z } : null); ui.setTrash(flotsam.collected, flotsam.total, true); },
+    () => { flotsam.clear(); ui.setTrash(0, 0, false); },
+    localTruth,
+  );
+}
 const minimap = new Minimap(ui.$('minimap'));
 let drivenFence = null, sweepFence = null, fence = null;   // fence: { r } circle or { x0, x1, z0, z1 } box
 
@@ -162,13 +166,25 @@ const est = {
 // ---------------------------------------------------------------------------------------------
 // websocket
 // ---------------------------------------------------------------------------------------------
-let ws;
-function connect() {
-  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
-  ws.onopen = () => { S.socket = true; ui.setSocket(true); };
-  ws.onmessage = (e) => {
+// Two ways to be connected. With a ground station (the real one, or sim/run.py) the page opens
+// its WebSocket. On a static host (GitHub Pages, Vercel) there is no station, so the whole
+// simulator runs inside the page in a Web Worker (sim/browser/core.py under Pyodide) and talks
+// the same messages. The choice is made once, by asking the station for its map.
+const api = (path) => new URL('../' + path, location.href).href;
+let ws;                   // whatever we're connected to: { readyState, send(), close() }
+let local = null;         // the worker, in local mode
+async function pickTransport() {
+  if (new URLSearchParams(location.search).get('local') === '1') return 'local';
+  try {
+    const ctl = new AbortController();
+    setTimeout(() => ctl.abort(), 3000);
+    const r = await fetch(api('api/grid'), { cache: 'no-store', signal: ctl.signal });
+    if (r.ok) return 'ws';
+  } catch { /* no station answers: run the sim here */ }
+  return 'local';
+}
+function onMessage(m) {
     S.lastMsgAt = now();
-    const m = JSON.parse(e.data);
     switch (m.t) {
       case 'world': onWorld(m); break;
       case 'tlm': onTlm(m); break;
@@ -179,19 +195,61 @@ function connect() {
       case 'link': onLink(m.up, m.ts); break;
       case 'control': setHolder(m.holder); break;
     }
-  };
-  ws.onclose = () => {
+}
+async function connect() {
+  const mode = await pickTransport();
+  if (mode === 'local') return connectLocal();
+  const sock = new WebSocket(api('ws').replace(/^http/, 'ws'));
+  ws = sock;
+  sock.onopen = () => { S.socket = true; ui.setSocket(true); };
+  sock.onmessage = (e) => onMessage(JSON.parse(e.data));
+  sock.onclose = () => {
     if (S.socket) ui.toast('crit', 'Lost the ground station', 'Reconnecting…', 2500);
     S.socket = false; ui.setSocket(false);
     setTimeout(connect, 1000);
   };
 }
+function connectLocal() {
+  const w = new Worker('js/worker/sim.worker.js');
+  local = { worker: w, waiting: [] };
+  ws = { readyState: 0, send: (data) => w.postMessage({ type: 'send', data }), close: () => {} };
+  ui.toast('info', 'Simulator running in your browser', 'No ground station on this page: the boat, the lake and the station run here, just for you. First load takes a moment.', 9000);
+  w.onmessage = (e) => {
+    const m = e.data;
+    if (m.type === 'status') ui.setLastSeenText(m.text);
+    else if (m.type === 'ready') { ws.readyState = 1; S.socket = true; ui.setSocket(true); S.lastMsgAt = now(); }
+    else if (m.type === 'msgs') m.list.forEach((s) => onMessage(JSON.parse(s)));
+    else if (m.type === 'truth' || m.type === 'csv') { const cb = local.waiting.shift(); cb?.res(m.data); }
+    else if (m.type === 'busy') { const cb = local.waiting.shift(); cb?.rej(new Error('sim not ready')); }
+    else if (m.type === 'error') { console.error('sim worker:', m.text); ui.toast('crit', 'Simulator error', m.text.slice(0, 120), 8000); }
+  };
+  w.onerror = (e) => ui.toast('crit', 'Simulator failed to start', e.message || 'see the console', 10000);
+  // the page is at .../viewer/; the Python files are published next to it at .../py/
+  w.postMessage({ type: 'init', pyBase: new URL('../py/', location.href).href });
+  // in local mode the export is produced in the page, and the truth feed is a call, not HTTP
+  // a question to the worker; answered in order. Before the sim is ready there is no answer, so
+  // give up after 3 s (the truth feed just tries again) instead of waiting forever
+  const ask = (type) => new Promise((res, rej) => {
+    const entry = { res, rej };
+    local.waiting.push(entry);
+    w.postMessage({ type });
+    setTimeout(() => { const i = local.waiting.indexOf(entry); if (i >= 0) { local.waiting.splice(i, 1); rej(new Error('sim not ready')); } }, 3000);
+  });
+  localTruth = () => ask('truth').then((s) => JSON.parse(s));
+  ui.$('btnExport').addEventListener('click', async (e) => {
+    e.preventDefault();
+    const csv = await ask('csv');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'run.csv'; a.click();
+  });
+}
+let localTruth = null;
 const send = (o) => ws && ws.readyState === 1 && ws.send(JSON.stringify(o));
 // The station talks several times a second (telemetry, or the grid every 2 s). A socket that
 // goes silent without closing (flaky Wi-Fi, a sleeping laptop) would leave stale numbers on
 // screen, so after 8 s of nothing it's closed, which triggers the reconnect above.
 setInterval(() => {
-  if (ws && ws.readyState === 1 && S.lastMsgAt && now() - S.lastMsgAt > 8) { ui.toast('warn', 'Station went quiet', 'Reconnecting…', 2500); ws.close(); }
+  if (!local && ws && ws.readyState === 1 && S.lastMsgAt && now() - S.lastMsgAt > 8) { ui.toast('warn', 'Station went quiet', 'Reconnecting…', 2500); ws.close(); }
 }, 2000);
 
 function onWorld(w) {
@@ -813,7 +871,7 @@ window.__view = { camera, controls, est, S };
 
 ui.intro();
 refreshCommand();
-connect();
+connect().then(startTruth);
 // start in follow once the boat shows up
 const waitFirst = setInterval(() => { if (est.has) { clearInterval(waitFirst); setCam('follow'); } }, 200);
 frame();

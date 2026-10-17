@@ -20,12 +20,9 @@ import threading
 import time
 
 import config
-from arduino import Arduino
 from autopilot import PathFollower
-from logger import CsvLogger
 from modes import AUTO, COMING_HOME, DRIVEN, Modes
 from nav import PositionFilter, clamp_to_rect, mix, point_inside_circle, smooth_heading
-from radio import make_link, read_wifi_dbm
 from safety import BatteryMonitor, HomePlan, driven_fence_ok, fence_ok
 from trail import Trail
 
@@ -34,14 +31,27 @@ log = logging.getLogger("boat")
 
 
 class Boat:
-    def __init__(self) -> None:
-        self.ard = Arduino(config.SERIAL_PORT, config.SERIAL_BAUD)
-        self.link = make_link(self.signal_dbm)
+    def __init__(self, ard=None, link=None, csv=None) -> None:
+        """The three things that touch the outside world can be handed in: the serial link to
+        the Arduino, the radio link, and the log. On the boat they're left out and the real
+        ones are made here. The browser demo (sim/browser) hands in fakes and runs this same
+        class, so what you see on a static web page is this file's logic."""
+        if ard is None:
+            from arduino import Arduino            # imported here: needs pyserial, which a browser hasn't got
+            ard = Arduino(config.SERIAL_PORT, config.SERIAL_BAUD)
+        if link is None:
+            from radio import make_link
+            link = make_link(self.signal_dbm)
+        if csv is None:
+            from logger import CsvLogger
+            csv = CsvLogger(config.LOG_DIR)
+        self.ard = ard
+        self.link = link
         self.modes = Modes()
         self.trail = Trail(config.TRAIL_EVERY_M, config.TRAIL_EVERY_S, config.HOME_SETTLE_S)
         self.batt = BatteryMonitor(config.BATT_AVG_S)
         self.home = HomePlan()
-        self.csv = CsvLogger(config.LOG_DIR)
+        self.csv = csv
         self.lock = threading.Lock()
 
         self.last_cmd: dict | None = None
@@ -68,6 +78,7 @@ class Boat:
     def signal_dbm(self) -> float | None:
         if config.ENV == "sim":
             return self.ard.state.signal_dbm
+        from radio import read_wifi_dbm
         return read_wifi_dbm()
 
     def pos(self, now: float | None = None) -> tuple[float, float]:

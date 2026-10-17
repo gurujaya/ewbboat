@@ -56,6 +56,7 @@ Gate: it comes back on its own when we cut the signal.
 - [x] Pi: home = the averaged first fixes at the jetty (`tlm.home`); every trip home ends there
 - [x] Pi: the path follower learns the current's push (crabs into a cross-current instead of sitting off its row)
 - [x] Sim: `montecarlo.py`, hundreds of graded fast-time runs across currents, GPS noise and seeds
+- [x] Sim: the simulator inside the browser (`sim/browser`) and the public link on GitHub Pages
 - [x] Station: map squares and sweep rows sized to the scoop (0.8 m); "covered" = the belt went over it; every-other-row turn pattern
 - [ ] Mechanical: confirm the scoop width (pontoon gap) and where the belt lip sits; `SCOOP_WIDTH_M` in ground-station/config.py and the funnel in sim/physics.py both depend on it
 - [ ] Pi: fence check in every mode

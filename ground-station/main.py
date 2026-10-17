@@ -21,14 +21,17 @@ import uuid
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "comms"))
 
-import uvicorn
-from boatlink import Link
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, Response
-from fastapi.staticfiles import StaticFiles
-
 import config
 from db import DB
+
+# Type names the route handlers are annotated with. Imported here (not only inside create_app)
+# because FastAPI resolves annotations through this module's globals; without them the /ws
+# handler can't be validated and every WebSocket is refused with a 403. The browser demo
+# (sim/browser) imports this file where FastAPI isn't installed, hence the fallback.
+try:
+    from fastapi import WebSocket, WebSocketDisconnect
+except ImportError:  # pragma: no cover
+    WebSocket = WebSocketDisconnect = None  # type: ignore[assignment,misc]
 from grid import Grid
 from sweep import corners_inside_circle, plan
 
@@ -39,18 +42,22 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DASHBOARD = os.path.join(HERE, "..", "dashboard")
 VIEWER = os.path.join(HERE, "..", "sim", "viewer")
 
-
 def driven_fence(origin, r_m):
     dlat = r_m / 111_320.0
     dlon = r_m / (111_320.0 * __import__("math").cos(__import__("math").radians(origin[0])))
     return [[origin[0] - dlat, origin[1] - dlon], [origin[0] + dlat, origin[1] + dlon]]
 
-
 class Station:
-    def __init__(self) -> None:
-        self.db = DB(config.DB_PATH)
+    def __init__(self, link=None, db=None) -> None:
+        """link and db can be handed in. On the shore they're left out and the real UDP link
+        and SQLite file are made here; the browser demo (sim/browser) hands in fakes and runs
+        this same class."""
+        if link is None:
+            from boatlink import Link
+            link = Link("station", listen=config.STATION_LISTEN, peer=config.BOAT_ADDR)
+        self.db = db if db is not None else DB(config.DB_PATH)
         self.grid = Grid(config.ORIGIN, config.GRID_M)
-        self.link = Link("station", listen=config.STATION_LISTEN, peer=config.BOAT_ADDR)
+        self.link = link
         self.loop: asyncio.AbstractEventLoop | None = None
         self.clients: dict[str, WebSocket] = {}
         self.holder: str | None = None
@@ -125,8 +132,11 @@ class Station:
     async def cmd_loop(self) -> None:
         while True:
             await asyncio.sleep(1.0 / config.CMD_HZ)
-            if not self.link.up:
-                continue
+            self.cmd_tick()
+
+    def cmd_tick(self) -> None:
+        """One `cmd` to the boat (CMD_HZ times a second while the link is up)."""
+        if self.link.up:
             now = time.time()
             asking = self.want_mode is not None and now < self.want_until
             mode = self.want_mode if asking else (self.last_tlm or {}).get("mode", "DRIVEN")
@@ -144,11 +154,15 @@ class Station:
     async def grid_loop(self) -> None:
         while True:
             await asyncio.sleep(2.0)
-            snap = self.grid.snapshot()
-            snap["t"] = "grid"
-            snap["ts"] = time.time()
-            snap["coverage_pct"] = self.grid.coverage_pct(self.sweep_corners)
-            await self.broadcast(snap)
+            await self.grid_tick()
+
+    async def grid_tick(self) -> None:
+        """The map, to every browser (every 2 s)."""
+        snap = self.grid.snapshot()
+        snap["t"] = "grid"
+        snap["ts"] = time.time()
+        snap["coverage_pct"] = self.grid.coverage_pct(self.sweep_corners)
+        await self.broadcast(snap)
 
     # ---- from browsers ---------------------------------------------------------------
     async def handle(self, cid: str, m: dict) -> None:
@@ -193,106 +207,109 @@ class Station:
                 self.grid.trash.append([self.last_tlm["lat"], self.last_tlm["lon"]])
                 await self.broadcast({"t": "evt", "kind": "trash_marked", "ts": time.time(), "detail": ""})
 
+def create_app(station: "Station"):
+    """The web side: the dashboard files, the live WebSocket, the REST bits. Built here (not at
+    import) so the Station class can be used without FastAPI, as the browser demo does."""
+    import uvicorn  # noqa: F401  (checked here so a missing install fails at startup, not on first request)
+    from fastapi import FastAPI
+    from fastapi.responses import FileResponse, RedirectResponse, Response
+    from fastapi.staticfiles import StaticFiles
 
-station = Station()
-app = FastAPI()
+    app = FastAPI()
 
+    @app.middleware("http")
+    async def no_stale_pages(request, call_next):
+        # the page and its scripts change while we develop; make browsers check every time
+        # instead of quietly running yesterday's copy of the JS
+        response = await call_next(request)
+        if not request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
-@app.middleware("http")
-async def no_stale_pages(request, call_next):
-    # the page and its scripts change while we develop; make browsers check every time
-    # instead of quietly running yesterday's copy of the JS
-    response = await call_next(request)
-    if not request.url.path.startswith("/api/"):
-        response.headers["Cache-Control"] = "no-cache"
-    return response
+    @app.websocket("/ws")
+    async def ws_endpoint(ws: WebSocket):
+        await ws.accept()
+        cid = uuid.uuid4().hex[:8]
+        station.clients[cid] = ws
+        await ws.send_text(json.dumps({**station.world_msg(with_history=True), "you": cid}))
+        if station.last_tlm:
+            await ws.send_text(json.dumps(station.last_tlm))
+        try:
+            while True:
+                raw = await ws.receive_text()
+                try:
+                    await station.handle(cid, json.loads(raw))
+                except Exception:
+                    log.exception("bad browser message")
+        except WebSocketDisconnect:
+            pass
+        finally:
+            station.clients.pop(cid, None)
+            if station.holder == cid:
+                station.holder = None
+                await station.broadcast({"t": "control", "holder": None, "ts": time.time()})
 
+    @app.get("/api/export.csv")
+    def export_csv():
+        rows = station.db.tlm_rows()
+        buf = io.StringIO()
+        w = csv.DictWriter(buf, fieldnames=rows[0].keys() if rows else ["ts"])
+        w.writeheader()
+        w.writerows(rows)
+        return Response(buf.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=run.csv"})
 
-@app.websocket("/ws")
-async def ws_endpoint(ws: WebSocket):
-    await ws.accept()
-    cid = uuid.uuid4().hex[:8]
-    station.clients[cid] = ws
-    await ws.send_text(json.dumps({**station.world_msg(with_history=True), "you": cid}))
-    if station.last_tlm:
-        await ws.send_text(json.dumps(station.last_tlm))
-    try:
-        while True:
-            raw = await ws.receive_text()
-            try:
-                await station.handle(cid, json.loads(raw))
-            except Exception:
-                log.exception("bad browser message")
-    except WebSocketDisconnect:
-        pass
-    finally:
-        station.clients.pop(cid, None)
-        if station.holder == cid:
-            station.holder = None
-            await station.broadcast({"t": "control", "holder": None, "ts": time.time()})
+    @app.get("/api/events")
+    def events():
+        return station.events[-200:]
 
+    @app.get("/api/grid")
+    def grid():
+        return station.grid.snapshot()
 
-@app.get("/api/export.csv")
-def export_csv():
-    rows = station.db.tlm_rows()
-    buf = io.StringIO()
-    w = csv.DictWriter(buf, fieldnames=rows[0].keys() if rows else ["ts"])
-    w.writeheader()
-    w.writerows(rows)
-    return Response(buf.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=run.csv"})
+    # SIM ONLY. The simulator's fake Arduino serves a "ground truth" feed (where the litter really is,
+    # what the belt really scooped) on its own port. On a laptop the viewer reads it directly; on a
+    # public demo host only this port is reachable, so the station passes it through. sim/run.py sets
+    # SIM_TRUTH_URL; on the real station it's unset and this route says so with a 404.
+    SIM_TRUTH_URL = os.environ.get("SIM_TRUTH_URL", "")
 
+    @app.get("/api/sim/truth")
+    def sim_truth():
+        if not SIM_TRUTH_URL:
+            return Response("not a simulation", status_code=404)
+        import urllib.request
+        try:
+            with urllib.request.urlopen(SIM_TRUTH_URL, timeout=0.5) as r:
+                return Response(r.read(), media_type="application/json", headers={"Cache-Control": "no-store"})
+        except Exception:
+            return Response("truth feed unavailable", status_code=503)
 
-@app.get("/api/events")
-def events():
-    return station.events[-200:]
+    @app.get("/viewer")
+    def viewer():
+        # the page uses relative URLs for its scripts (so it also works on a static host), which
+        # only resolve from the folder form of the address
+        return RedirectResponse("/viewer/")
 
+    app.mount("/viewer", StaticFiles(directory=VIEWER, html=True), name="viewer")
+    if os.path.isfile(os.path.join(DASHBOARD, "index.html")):
+        app.mount("/", StaticFiles(directory=DASHBOARD, html=True), name="dashboard")
+    else:
+        @app.get("/")
+        def root():
+            return Response("<a href='/viewer/'>3D viewer</a> &middot; dashboard not built yet", media_type="text/html")
 
-@app.get("/api/grid")
-def grid():
-    return station.grid.snapshot()
+    @app.on_event("startup")
+    async def startup():
+        station.loop = asyncio.get_running_loop()
+        station.link.start()
+        asyncio.ensure_future(station.cmd_loop())
+        asyncio.ensure_future(station.grid_loop())
+        log.info("station up: boat=%s http=%s db=%s", config.BOAT_ADDR, config.HTTP_PORT, config.DB_PATH)
 
-
-# SIM ONLY. The simulator's fake Arduino serves a "ground truth" feed (where the litter really is,
-# what the belt really scooped) on its own port. On a laptop the viewer reads it directly; on a
-# public demo host only this port is reachable, so the station passes it through. sim/run.py sets
-# SIM_TRUTH_URL; on the real station it's unset and this route says so with a 404.
-SIM_TRUTH_URL = os.environ.get("SIM_TRUTH_URL", "")
-
-
-@app.get("/api/sim/truth")
-def sim_truth():
-    if not SIM_TRUTH_URL:
-        return Response("not a simulation", status_code=404)
-    import urllib.request
-    try:
-        with urllib.request.urlopen(SIM_TRUTH_URL, timeout=0.5) as r:
-            return Response(r.read(), media_type="application/json", headers={"Cache-Control": "no-store"})
-    except Exception:
-        return Response("truth feed unavailable", status_code=503)
-
-
-@app.get("/viewer")
-def viewer():
-    return FileResponse(os.path.join(VIEWER, "index.html"))
-
-
-app.mount("/viewer", StaticFiles(directory=VIEWER), name="viewer")
-if os.path.isfile(os.path.join(DASHBOARD, "index.html")):
-    app.mount("/", StaticFiles(directory=DASHBOARD, html=True), name="dashboard")
-else:
-    @app.get("/")
-    def root():
-        return Response("<a href='/viewer'>3D viewer</a> &middot; dashboard not built yet", media_type="text/html")
-
-
-@app.on_event("startup")
-async def startup():
-    station.loop = asyncio.get_running_loop()
-    station.link.start()
-    asyncio.ensure_future(station.cmd_loop())
-    asyncio.ensure_future(station.grid_loop())
-    log.info("station up: boat=%s http=%s db=%s", config.BOAT_ADDR, config.HTTP_PORT, config.DB_PATH)
-
+    return app
 
 if __name__ == "__main__":
+    import uvicorn
+
+    station = Station()
+    app = create_app(station)
     uvicorn.run(app, host="0.0.0.0", port=config.HTTP_PORT, log_level="warning")

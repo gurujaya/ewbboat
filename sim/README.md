@@ -22,6 +22,8 @@ python sim/run.py          # first run compiles the Arduino firmware for your la
 
 In the viewer: **Drive** (takes control and asks the boat for DRIVEN), then W A S D or a gamepad, C for the conveyor; on a phone or tablet, drag the on-screen stick (let go to stop) and tap Conveyor. **Sweep**, then click two corners on the water. **Home**. Watch the trail change color as the signal weakens, and drive past the radio range to see the boat stop, wait, back up, and come home on its own. Keys 1 / 2 / 3 switch the camera between follow, free and a top-down map.
 
+The same page also runs with no station at all: on a static host (the public link on GitHub Pages) or with `?local=1`, the whole simulator runs inside the page under Pyodide (`sim/browser/core.py`: the real `Boat` and `Station` classes with in-memory radio and Arduino stand-ins). See `sim/DEPLOY.md`.
+
 The viewer only shows what the station knows. The boat sends its position 5 times a second (already smoothed by the boat's GPS filter), so between messages the model is moved along its reported heading at its reported `speed_mps` and eased toward each new one. Every effect comes from a real field: prop wash from `left`/`right`, the moving belt and drips from `conveyor`, the wake from speed, the radio pulses from `signal_dbm`, the grey boat and red banner from the station's link state.
 
 Knobs:
@@ -108,6 +110,8 @@ sim/
   run.py            builds boat-host if needed, then starts all three processes with the right environment
   headless_test.py  end-to-end check, no browser (10 min)
   montecarlo.py     hundreds of fast-time runs of the boat's math, graded (1 s)
+  browser/core.py   the simulator in one process with no network, for running inside a web page
+  browser/build_site.py  assembles the static site (viewer + the Python it needs)
   viewer/            station view of the lake. Reads the station's /ws, so it also shows the real boat.
     index.html       layout (Tailwind)
     js/main.js       websocket, smoothing between fixes, camera, driving, sweep picking, particle emitters
